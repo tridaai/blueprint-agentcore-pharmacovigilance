@@ -70,6 +70,7 @@ from pv_cases.models import (
     ReviewBinding,
     ReviewQueueEntry,
     is_named_human,
+    seal_refusal_text,
 )
 
 # ---------------------------------------------------------------------
@@ -160,6 +161,11 @@ class ReviewService:
         self.chain = chain
         self.coding = coding
         self.assessment = assessment
+        # Round 7: the sealing guard. Wiring binds this to the
+        # sealing service's lookup; while it is set, a sealed
+        # case refuses new review acts — a sealed case is a
+        # closed record.
+        self.seal_lookup = None
 
     # -- bindings ------------------------------------------------------
     def current_bindings(self, case_id: str) -> list[ReviewBinding]:
@@ -266,6 +272,10 @@ class ReviewService:
                 f" {case.suspected_duplicate_of or 'another case'} —"
                 " review the surviving case, not the closed one"
             )
+        if self.seal_lookup is not None:
+            seal = self.seal_lookup(case_id)
+            if seal is not None:
+                raise ReviewError(seal_refusal_text(seal, "review acts"))
         if not is_named_human(reviewer):
             raise ReviewError("a review act needs a named human reviewer")
         if role not in REVIEW_PACK["roles"]:

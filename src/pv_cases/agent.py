@@ -345,6 +345,10 @@ class CaseAssembler:
         self.coding = coding
         self.assessment = assessment
         self.resolver = CitationResolver(chain)
+        # Round 7: the sealing guard, bound by wiring — while it
+        # is set, a sealed case refuses new summaries: a sealed
+        # case is a closed record.
+        self.seal_lookup = None
 
     # -- tools (plain functions, Strands shape) ----------------------
     def read_case_facts(self, case_id: str) -> list[dict[str, Any]]:
@@ -479,6 +483,12 @@ class CaseAssembler:
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
+        if self.seal_lookup is not None:
+            seal = self.seal_lookup(case_id)
+            if seal is not None:
+                from pv_cases.models import seal_refusal_text
+
+                raise CitationRefusal([seal_refusal_text(seal, "summaries")])
         self._attach_history(case_id, today)
         self._attach_coding(case_id, today)
         self._attach_assessment(case_id, today)

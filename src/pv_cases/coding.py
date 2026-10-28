@@ -54,6 +54,7 @@ from pv_cases.models import (
     ProductDictionaryEntry,
     SummaryStatement,
     is_named_human,
+    seal_refusal_text,
     normalise_text,
 )
 
@@ -332,6 +333,18 @@ class CodingService:
     def __init__(self, store, chain: EvidenceChain):
         self.store = store
         self.chain = chain
+        # Round 7: the sealing guard — while wiring has bound a
+        # seal lookup, a sealed case refuses recodes and coder
+        # resolutions: a sealed case is a closed record.
+        self.seal_lookup = None
+
+    def _refuse_if_sealed(self, case_id: str) -> None:
+        if self.seal_lookup is not None:
+            seal = self.seal_lookup(case_id)
+            if seal is not None:
+                raise CodingError(
+                    seal_refusal_text(seal, "coding decisions")
+                )
 
     # -- inputs ---------------------------------------------------------
     def report_of(self, case: Case) -> IntakeReport:
@@ -386,6 +399,7 @@ class CodingService:
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
+        self._refuse_if_sealed(case_id)
         dv = self.dictionary(version, today)
         report = self.report_of(case)
         subjects: list[tuple[str, int, str]] = [
@@ -536,6 +550,7 @@ class CodingService:
         task = self.store.get_coding_task(task_id)
         if task is None:
             raise KeyError(f"no such coding task: {task_id}")
+        self._refuse_if_sealed(task.case_id)
         if task.status is not CodingReviewStatus.OPEN:
             raise CodingTaskClosed(
                 f"coding task {task_id} is {task.status.value} — decided work does not move"

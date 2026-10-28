@@ -78,6 +78,7 @@ from pv_cases.models import (
     FollowUpTaskView,
     IntakeReport,
     MissingItem,
+    seal_refusal_text,
 )
 from pv_cases.reporting import merge_reports
 from pv_cases.services import IntakeService
@@ -266,6 +267,18 @@ class FollowUpService:
         self.coding = coding
         self.assessment = assessment
         self.dedup = dedup
+        # Round 7: the sealing guard, bound by wiring — while it
+        # is set, a sealed case refuses new follow-up requests
+        # and follow-up reports: a sealed case is a closed record.
+        self.seal_lookup = None
+
+    def _refuse_if_sealed(self, case_id: str) -> None:
+        if self.seal_lookup is not None:
+            seal = self.seal_lookup(case_id)
+            if seal is not None:
+                raise FollowUpError(
+                    seal_refusal_text(seal, "follow-up work")
+                )
 
     # -- raising -----------------------------------------------------
     def _class_days(self, items: list[MissingItem]) -> int:
@@ -331,6 +344,7 @@ class FollowUpService:
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
+        self._refuse_if_sealed(case_id)
         created: list[FollowUpRequest] = []
         if self.coding is not None:
             for decision in self.coding.current_decisions(case_id):
@@ -483,6 +497,8 @@ class FollowUpService:
         task = self.store.get_follow_up_request(task_id)
         if task is None:
             raise KeyError(f"no such follow-up request: {task_id}")
+        if task.case_id is not None:
+            self._refuse_if_sealed(task.case_id)
         standing = self._derive(task, today)
         if standing.state in (FU_STATE_RESOLVED, FU_STATE_ESCALATED):
             raise FollowUpError(

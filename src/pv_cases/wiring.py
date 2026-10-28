@@ -16,6 +16,7 @@ from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
 from pv_cases.object_store import LocalObjectStore
 from pv_cases.review import ReviewService
+from pv_cases.sealing import SealingService
 from pv_cases.services import IntakeService
 from pv_cases.store import SqlCaseStore
 
@@ -66,6 +67,24 @@ class Services:
             coding=self.coding,
             assessment=self.assessment,
         )
+        # Round 7: sealing + export + the offline verifier. The
+        # sealing service reads the review gate to seal over it;
+        # every writing service then consults the seal before
+        # adding to a case — a sealed case is a closed record.
+        self.sealing = SealingService(
+            self.store,
+            self.chain,
+            review=self.review,
+            coding=self.coding,
+            assessment=self.assessment,
+        )
+        for writer in (
+            self.review,
+            self.coding,
+            self.assessment,
+            self.followup,
+        ):
+            writer.seal_lookup = self.sealing.get_seal
         self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
         self.assembler = CaseAssembler(
@@ -76,6 +95,7 @@ class Services:
             coding=self.coding,
             assessment=self.assessment,
         )
+        self.assembler.seal_lookup = self.sealing.get_seal
 
 
 def build_services(settings: Settings | None = None) -> Services:

@@ -86,6 +86,7 @@ from pv_cases.models import (
     SeriousnessOutcome,
     SummaryStatement,
     normalise_text,
+    seal_refusal_text,
 )
 from pv_cases.services import payload_fingerprint
 
@@ -749,6 +750,12 @@ def _change_between(old: CaseAssessment, new: CaseAssessment) -> dict:
     return change
 
 
+class AssessmentError(ValueError):
+    """An assessment act that cannot be taken — today, one
+    refusal: the case is sealed (Round 7), and a sealed case is a
+    closed record that takes no new assessments."""
+
+
 class AssessmentService:
     """Runs the three packs over a case's coded facts and stores
     the verdict as a pinned artefact. Re-assessment over unchanged
@@ -758,6 +765,9 @@ class AssessmentService:
     def __init__(self, store, chain: EvidenceChain):
         self.store = store
         self.chain = chain
+        # Round 7: the sealing guard, bound by wiring — while it
+        # is set, a sealed case refuses new assessments.
+        self.seal_lookup = None
 
     # -- inputs ---------------------------------------------------------
     def report_of(self, case: Case) -> IntakeReport:
@@ -798,6 +808,12 @@ class AssessmentService:
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
+        if self.seal_lookup is not None:
+            seal = self.seal_lookup(case_id)
+            if seal is not None:
+                raise AssessmentError(
+                    seal_refusal_text(seal, "assessments")
+                )
         self.ensure_rsi(today)
         rsi = self.rsi()
         report = self.report_of(case)
