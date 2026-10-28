@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from pv_cases import __version__
 from pv_cases.agent import CitationRefusal
+from pv_cases.assessment import AssessmentError
 from pv_cases.coding import CodingError, CodingTaskClosed
 from pv_cases.dedup import DedupDecisionError
 from pv_cases.followup import FOLLOW_UP_PACK, FollowUpError
@@ -32,6 +33,8 @@ from pv_cases.models import (
 )
 from pv_cases.review import REVIEW_PACK, ReviewError
 from pv_cases.runtime_app import handle_invocation
+from pv_cases.sealing import SEALING_PACK, SealError
+from pv_cases.verify import verify_package
 from pv_cases.wiring import Services, build_services
 
 app = FastAPI(title="Pharmacovigilance Case Agent — Case API", version=__version__)
@@ -359,6 +362,8 @@ def assess_case(case_id: str) -> dict:
         return svc().assessment.assess_case(case_id, date.today()).model_dump(mode="json")
     except KeyError as exc:
         raise HTTPException(404, str(exc))
+    except AssessmentError as exc:
+        raise HTTPException(409, str(exc))
 
 
 @app.get("/clocks")
@@ -537,6 +542,111 @@ def record_review(case_id: str, req: ReviewRequest) -> dict:
     except ReviewError as exc:
         raise HTTPException(409, str(exc))
     return act.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------
+# Round 7: sealing, export, offline verification.
+# ---------------------------------------------------------------------
+
+
+@app.get("/sealing/pack")
+def sealing_pack() -> dict:
+    """The versioned sealing pack: the package format, the gate,
+    immutability and export rules every seal and export is taken
+    under."""
+    return SEALING_PACK
+
+
+class SealRequest(BaseModel):
+    sealed_by: str
+
+
+@app.post("/cases/{case_id}/seal")
+def seal_case(case_id: str, req: SealRequest) -> dict:
+    """Seal one case's file. The case must stand medically
+    reviewed over its current record; the refusal names the
+    blocker (the missing role, the standing hold, the stale
+    acts). A seal is taken once."""
+    if not is_named_human(req.sealed_by):
+        raise HTTPException(400, "a seal needs a named human sealer")
+    try:
+        seal = svc().sealing.seal_case(case_id, req.sealed_by, date.today())
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+    except SealError as exc:
+        raise HTTPException(409, str(exc))
+    return seal.model_dump(mode="json")
+
+
+@app.get("/cases/{case_id}/seal")
+def get_seal(case_id: str) -> dict:
+    """The case's seal, where one stands: the bound inventory,
+    the chain head, the review bindings and the pack versions."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    seal = svc().sealing.get_seal(case_id)
+    if seal is None:
+        raise HTTPException(404, f"case {case_id} is not sealed")
+    return seal.model_dump(mode="json")
+
+
+class ExportRequest(BaseModel):
+    exported_by: str
+
+
+@app.post("/cases/{case_id}/export")
+def export_case(case_id: str, req: ExportRequest) -> dict:
+    """Serve one export package of a sealed case and record the
+    serving. An unsealed case has no export — the refusal names
+    the seal requirement."""
+    if not is_named_human(req.exported_by):
+        raise HTTPException(400, "an export needs a named human exporter")
+    try:
+        record, package = svc().sealing.export_case(
+            case_id, req.exported_by, date.today()
+        )
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+    except SealError as exc:
+        raise HTTPException(409, str(exc))
+    return {"export": record.model_dump(mode="json"), "package": package}
+
+
+@app.get("/cases/{case_id}/exports")
+def list_exports(case_id: str) -> list[dict]:
+    """Every recorded export serving of the case: who, when, and
+    the hash of the exact bytes served."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [
+        e.model_dump(mode="json") for e in svc().sealing.list_exports(case_id)
+    ]
+
+
+@app.get("/cases/{case_id}/export.txt")
+def export_text(case_id: str):
+    """The plain-text rendering of the case's export package —
+    deterministic, like the package itself."""
+    from fastapi.responses import PlainTextResponse
+
+    seal = svc().sealing.get_seal(case_id)
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    if seal is None:
+        raise HTTPException(409, f"case {case_id} is not sealed")
+    package = svc().sealing.build_package(seal)
+    return PlainTextResponse(svc().sealing.render_text(package))
+
+
+class VerifyRequest(BaseModel):
+    package: dict
+
+
+@app.post("/exports/verify")
+def verify_export(req: VerifyRequest) -> dict:
+    """The offline verifier over a posted package: every named
+    check re-performed from the package alone, no store read."""
+    return verify_package(req.package).model_dump(mode="json")
 
 
 class AdditionRequest(BaseModel):

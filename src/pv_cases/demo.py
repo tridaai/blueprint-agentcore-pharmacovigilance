@@ -15,6 +15,11 @@ one case whose missing outcome lands on day 20 — after its 7-day
 clock has already run out. Round 6 adds the medical-reviewer
 gate: dual control over the assembled record, a reject that holds
 a case until the record itself changes, and the review queue.
+Round 7 adds sealing and export: the reviewed case is sealed over
+its exact artefact inventory, a further artefact is refused in its
+face, the export package is served byte-identically twice, the
+offline verifier passes it check by check, and a package with an
+altered clock deadline fails with the broken checks named.
 Run with ``make demo``.
 """
 
@@ -255,6 +260,59 @@ def run_demo(out=print) -> Services:
     )
     view = svc.review.review_for_case("CASE-RPT-2026-0305")
     out(f"  a fresh dual review decides the new record: {view.state}")
+
+    out("-" * 62)
+    import copy
+
+    from pv_cases.review import ReviewError
+    from pv_cases.verify import verify_package
+
+    out("Round 7 — sealing, export and the offline verifier:")
+    seal_day = date(2026, 10, 26)
+    seal = svc.sealing.seal_case("CASE-RPT-2026-0001", "Northbridge PV Operations", seal_day)
+    out(
+        f"  {seal.seal_id}: sealed by {seal.sealed_by} over"
+        f" {len(seal.inventory)} artefacts — chain head"
+        f" {seal.chain_head_hash[:16]}…, gate acts"
+        f" {seal.accepted_acts['medical_reviewer']} +"
+        f" {seal.accepted_acts['safety_reviewer']}"
+    )
+    try:
+        svc.review.record_review(
+            "CASE-RPT-2026-0001", "Dr A. Rao", "medical_reviewer",
+            "accept", "", seal_day,
+        )
+        out("  UNEXPECTED: a sealed case took a new review act")
+    except ReviewError as exc:
+        out(f"  a sealed case refuses new artefacts: {exc}")
+    record, package = svc.sealing.export_case(
+        "CASE-RPT-2026-0001", "Northbridge PV Operations", seal_day
+    )
+    record2, package2 = svc.sealing.export_case(
+        "CASE-RPT-2026-0001", "Northbridge PV Operations", seal_day
+    )
+    same_bytes = svc.sealing.package_bytes(package) == svc.sealing.package_bytes(package2)
+    out(
+        f"  {record.export_id}: package hash {record.package_hash[:16]}…"
+        f" (second export byte-identical: {same_bytes})"
+    )
+    report = verify_package(package)
+    for check in report.checks:
+        out(f"    [{'PASS' if check.passed else 'FAIL'}] {check.name}")
+    out(f"  verifier verdict on the served package: {report.verdict.upper()}")
+    tampered = copy.deepcopy(package)
+    for entry in tampered["artefacts"]:
+        if entry["kind"] == "assessment":
+            entry["payload"]["clock"]["deadline"] = "2026-12-31"
+    bad = verify_package(tampered)
+    failed = ", ".join(c.name for c in bad.checks if not c.passed)
+    out(
+        f"  a package with its clock deadline altered: verdict"
+        f" {bad.verdict.upper()} — failing checks: {failed}"
+    )
+    out("  Nothing above is submitted anywhere: the package is a")
+    out("  reviewable case file, and submission is a human act")
+    out("  outside this system.")
     return svc
 
 

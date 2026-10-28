@@ -28,6 +28,7 @@ dev = ["pytest==9.1.1", "httpx==0.28.1"]
 
 [project.scripts]
 pv-agent = "pv_cases.cli:main"
+pv-agent-verify-export = "pv_cases.verify:main"
 pv-agent-demo = "pv_cases.demo:main"
 pv-agent-serve = "pv_cases.runtime_main:main"
 pv-agent-invoke = "pv_cases.local_invoke:main"

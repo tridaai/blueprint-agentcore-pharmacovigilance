@@ -1,7 +1,8 @@
 """Command line: ``pv-agent feed|assemble|verify|dedup|confirm|
 reject|history-*|coding*|resolve-coding|dictionary*|assess|
 assessment|clocks|rsi|follow-up*|submit-follow-up|review|
-review-case|review-queue|review-pack`` against the
+review-case|review-queue|review-pack|seal|seal-case|
+export-case|verify-export|sealing-pack`` against the
 configured store."""
 
 from __future__ import annotations
@@ -32,7 +33,10 @@ USAGE = (
     "follow-up-task <task_id>|follow-up-pack|"
     "submit-follow-up <task_id> <report-json>|"
     "review <case_id> <reviewer> <role> <decision> [rationale...]|"
-    "review-case <case_id>|review-queue [as-of]|review-pack"
+    "review-case <case_id>|review-queue [as-of]|review-pack|"
+    "seal <case_id> <sealed_by...>|seal-case <case_id>|"
+    "export-case <case_id> <exported_by...>|"
+    "verify-export <package.json>|sealing-pack"
 )
 
 
@@ -349,6 +353,68 @@ def main(argv: list[str] | None = None) -> int:
             f"review pack {REVIEW_PACK['version']}: roles"
             f" {', '.join(REVIEW_PACK['roles'])}; decisions"
             f" {', '.join(REVIEW_PACK['decisions'])}"
+        )
+        return 0
+    if cmd == "seal" and len(argv) >= 3:
+        # Round 7: the named seal act over a medically reviewed
+        # case; a refusal names its blocker and exits 1.
+        from pv_cases.sealing import SealError
+
+        try:
+            seal = svc.sealing.seal_case(argv[1], " ".join(argv[2:]), today)
+        except KeyError:
+            print(f"no such case: {argv[1]}")
+            return 1
+        except SealError as exc:
+            print(f"seal refused: {exc}")
+            return 1
+        print(
+            f"{seal.seal_id}: case {seal.case_id} sealed by {seal.sealed_by}"
+            f" — {len(seal.inventory)} artefacts, chain head"
+            f" {seal.chain_head_hash[:16]}…"
+        )
+        return 0
+    if cmd == "seal-case" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        seal = svc.sealing.get_seal(argv[1])
+        if seal is None:
+            print(f"{argv[1]}: not sealed")
+            return 1
+        print(json.dumps(seal.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "export-case" and len(argv) >= 3:
+        # The export serving: the record line first, then the
+        # package JSON — the exact bytes the record's hash names.
+        from pv_cases.sealing import SealError
+
+        try:
+            record, package = svc.sealing.export_case(
+                argv[1], " ".join(argv[2:]), today
+            )
+        except KeyError:
+            print(f"no such case: {argv[1]}")
+            return 1
+        except SealError as exc:
+            print(f"export refused: {exc}")
+            return 1
+        print(f"export {record.export_id} hash {record.package_hash}")
+        print(svc.sealing.package_bytes(package).decode("utf-8"))
+        return 0
+    if cmd == "verify-export" and len(argv) == 2:
+        # The offline verifier over a package file — the package
+        # is all it reads; no store is consulted.
+        from pv_cases.verify import main as verify_main
+
+        return verify_main([argv[1]])
+    if cmd == "sealing-pack":
+        from pv_cases.sealing import SEALING_PACK
+
+        print(
+            f"sealing pack {SEALING_PACK['version']}: package format"
+            f" {SEALING_PACK['package_format']} —"
+            f" {SEALING_PACK['gate_rule']}"
         )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
