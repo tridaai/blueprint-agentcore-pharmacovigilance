@@ -1,4 +1,4 @@
-"""Eval gate — Rounds 1–5 (pharmacovigilance case agent).
+"""Eval gate — Rounds 1–6 (pharmacovigilance case agent).
 
 Runs the planted feed through the real service graph on a throwaway
 SQLite store and grades the guarantees. Every counter is
@@ -123,6 +123,35 @@ follow-up fixtures:
                                  follow-ups, the founded case not
                                  linked as a suspected duplicate,
                                  or in-place edits of requests/acts
+
+Round 6 (medical review — dual control), graded over the book:
+  review_dual_control_refusals   the same person in the second
+                                 role, an unnamed reviewer, or a
+                                 reject without its reason being
+                                 recorded instead of refused
+  review_single_reviewer_completed a case reaching
+                                 medically_reviewed on one role's
+                                 act, or failing to reach it on two
+                                 distinct reviewers' acts
+  review_stale_acts_counted      acts bound to a superseded
+                                 record still counting toward the
+                                 gate, or not labelled stale with
+                                 the case back at awaiting review
+  review_hold_wrong              a current reject not holding its
+                                 case, an accept over the same
+                                 record clearing the hold, the hold
+                                 surviving the record's supersession,
+                                 or a fresh dual review failing to
+                                 complete the gate afterwards
+  review_queue_phi_leaks         a planted patient or reporter
+                                 identity anywhere in the review
+                                 queue's serialised form, a reviewed
+                                 case standing as queue work, or
+                                 the stale case outside its bucket
+  review_acts_edited_in_place    the store port growing an update
+                                 or delete for review acts, or a
+                                 case's evidence chain failing with
+                                 review acts recorded on it
 
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
@@ -913,7 +942,179 @@ def main() -> int:
     ageing_wrong += board["FUP-RPT-2026-0431"].state != "resolved"
     counters["unresolved_task_ageing_wrong"] = ageing_wrong
 
-    print("Rounds 1–5 evals — pharmacovigilance case agent")
+    # ---------------- Round 6: medical review — dual control ----------------
+    # The gate completes only on two distinct reviewers, one per
+    # role, over the same bound record. A reject holds until the
+    # record it bound is superseded; supersession stales every
+    # act bound to the old record.
+    from pv_cases.models import (
+        AdverseEvent as _AE,
+        IntakeReport as _IR,
+        Patient as _Pat,
+        ReportSource as _Src,
+        Reporter as _Rep,
+    )
+    from pv_cases.review import ReviewError
+
+    refusals_wrong = 0
+    svc.review.record_review(
+        f"{C}0304", "Dr A. Rao", "medical_reviewer", "accept", "", DAY
+    )
+    for reviewer, role, decision, rationale in (
+        ("Dr A. Rao", "safety_reviewer", "accept", ""),  # same person, second role
+        ("unknown", "safety_reviewer", "accept", ""),  # unnamed reviewer
+        ("Dr B. Lindqvist", "safety_reviewer", "reject_with_reason", ""),  # no reason
+        ("Dr B. Lindqvist", "chief", "accept", ""),  # unknown role
+    ):
+        try:
+            svc.review.record_review(
+                f"{C}0304", reviewer, role, decision, rationale, DAY
+            )
+            refusals_wrong += 1  # recorded instead of refused
+        except ReviewError:
+            pass
+    refusals_wrong += len(svc.store.list_review_acts(f"{C}0304")) != 1
+    counters["review_dual_control_refusals"] = refusals_wrong
+
+    single_wrong = 0
+    single_wrong += (
+        svc.review.review_for_case(f"{C}0304").state != "awaiting_second_review"
+    )
+    svc.review.record_review(
+        f"{C}0304", "Dr B. Lindqvist", "safety_reviewer", "accept", "", DAY
+    )
+    single_wrong += (
+        svc.review.review_for_case(f"{C}0304").state != "medically_reviewed"
+    )
+    counters["review_single_reviewer_completed"] = single_wrong
+
+    # Staleness: 0307 is fully reviewed, then a dictionary
+    # addition + recode rewrites its coding and its assessment —
+    # both acts go stale and the case falls back to awaiting a
+    # first review.
+    stale_wrong = 0
+    svc.review.record_review(
+        f"{C}0307", "Dr A. Rao", "medical_reviewer", "accept", "", DAY
+    )
+    svc.review.record_review(
+        f"{C}0307", "Dr B. Lindqvist", "safety_reviewer", "accept", "", DAY
+    )
+    stale_wrong += (
+        svc.review.review_for_case(f"{C}0307").state != "medically_reviewed"
+    )
+    svc.coding.propose_addition(
+        "Dr C. Mensah",
+        DAY,
+        "event",
+        DictionaryEntry(
+            verbatim="Queasiness after dose",
+            preferred_term="Nausea",
+            soc="Gastrointestinal disorders",
+        ),
+    )
+    svc.coding.code_case(f"{C}0307", DAY)
+    svc.assessment.assess_case(f"{C}0307", DAY)
+    view = svc.review.review_for_case(f"{C}0307")
+    stale_wrong += view.state != "awaiting_first_review"
+    stale_wrong += not view.has_stale_acts
+    stale_wrong += not all(a.stale for a in view.acts)
+    stale_wrong += not all(a.superseded_by for a in view.acts)
+    counters["review_stale_acts_counted"] = stale_wrong
+
+    # The hold: a reject on 0305 stands over an accept on the
+    # same record; the follow-up that lands the outcome
+    # supersedes the record, the hold clears with it, and a fresh
+    # dual review completes the gate.
+    hold_wrong = 0
+    svc.review.record_review(
+        f"{C}0305",
+        "Dr B. Lindqvist",
+        "safety_reviewer",
+        "reject_with_reason",
+        "Seriousness cannot be confirmed until the outcome is on record.",
+        DAY,
+    )
+    svc.review.record_review(
+        f"{C}0305", "Dr A. Rao", "medical_reviewer", "accept", "", DAY
+    )
+    view = svc.review.review_for_case(f"{C}0305")
+    hold_wrong += view.state != "review_hold"
+    hold_wrong += "outcome is on record" not in (view.hold_reason or "")
+    answer = _IR(
+        report_id="RPT-2026-0305-FU1",
+        source=_Src.CALL_CENTRE,
+        received_on=date(2026, 10, 25),
+        patient=_Pat(initials="H.B.", age=62, sex="M"),
+        reporter=_Rep(name="Call centre agent R. Patel", phone="+1-555-0199"),
+        suspect_product_code="NBT-101",
+        suspect_product_name="Cardivane",
+        events=[
+            _AE(
+                verbatim_term="Severe headache",
+                onset_date=date(2026, 10, 19),
+                outcome="recovered",
+                description="Recovered fully within two days;"
+                " no hospital care was needed.",
+            )
+        ],
+    )
+    svc.followup.submit_follow_up(f"FUP-{C}0305-A", answer, date(2026, 10, 25))
+    view = svc.review.review_for_case(f"{C}0305")
+    hold_wrong += view.state != "awaiting_first_review"
+    hold_wrong += view.hold_act_id is not None
+    svc.review.record_review(
+        f"{C}0305", "Dr A. Rao", "medical_reviewer", "accept", "",
+        date(2026, 10, 25),
+    )
+    svc.review.record_review(
+        f"{C}0305", "Dr B. Lindqvist", "safety_reviewer", "accept", "",
+        date(2026, 10, 25),
+    )
+    hold_wrong += (
+        svc.review.review_for_case(f"{C}0305").state != "medically_reviewed"
+    )
+    counters["review_hold_wrong"] = hold_wrong
+
+    # The queue: minimised by construction, reviewed cases are
+    # not work, and the staled case stands in its own bucket.
+    import json as _json
+
+    queue = svc.review.queue(date(2026, 11, 20))
+    blob = _json.dumps([e.model_dump(mode="json") for e in queue])
+    leaks = sum(
+        1
+        for phi in (
+            "H.B.",
+            "D.K.",
+            "1988-03-14",
+            "dk@example.net",
+            "R. Patel",
+            "+1-555-0199",
+            "initials",
+            "date_of_birth",
+        )
+        if phi in blob
+    )
+    by_id = {e.case_id: e for e in queue}
+    leaks += f"{C}0304" in by_id or f"{C}0305" in by_id
+    leaks += by_id[f"{C}0307"].bucket != "stale_review"
+    counters["review_queue_phi_leaks"] = leaks
+
+    # Acts are insert-only artefacts, and the trails they leave
+    # on the evidence chains verify like everything else.
+    edits = sum(
+        1
+        for verb in ("update_review_act", "delete_review_act")
+        if hasattr(svc.store, verb)
+    )
+    edits += sum(
+        1
+        for case in svc.store.list_cases()
+        if not svc.chain.verify_chain(case.case_id)
+    )
+    counters["review_acts_edited_in_place"] = edits
+
+    print("Rounds 1–6 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]

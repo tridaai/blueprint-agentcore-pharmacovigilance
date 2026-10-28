@@ -112,6 +112,22 @@ other blueprints already cover the LangGraph pattern.
    from the acts in code; an attempt failing at the pack's
    cycle cap escalates to a named state rather than expiring,
    and decided requests take no further reports.
+10. (R6) A case is medically reviewed only by dual control:
+    current accept acts from both reviewer roles (medical,
+    safety), recorded by two distinct named people — the same
+    person holding a current act in the other role is refused
+    at recording time. Each act binds the current assessment,
+    the current coding decisions and the latest summary by id
+    and hash (the summary by content hash — its id is a
+    per-assembly sequence number, not a version). Staleness is
+    derived: a superseded artefact stales every act bound to
+    it, and stale acts count for nothing while staying on the
+    trail, labelled, with the superseding artefacts named. A
+    current reject holds the case until the record it bound is
+    superseded; the rejecting act is never edited. Review acts
+    are insert-only, recorded on the evidence chain, and the
+    review queue's entries carry no patient- or
+    reporter-identifying field by construction.
 
 ## Round map
 

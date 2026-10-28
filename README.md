@@ -9,10 +9,12 @@ its intake channels and its medical reviewers: adverse-event reports
 arrive from patients, clinicians, call centres and literature, and
 the agent **passes each one through a validity gate in code,
 assembles the valid ones into evidence-backed case files, and
-stops**. A named medical reviewer will own seriousness, causality
-and every submission decision in later rounds. The system ends at
-an assembled, exportable case file — **it never submits anything to
-a regulator or a safety database of record**.
+stops at the medical-reviewer gate**: two named reviewers — a
+medical reviewer and a safety reviewer, never the same person —
+must each accept the assembled record before the case counts as
+reviewed. The system ends at an approved, exportable case file —
+**it never submits anything to a regulator or a safety database
+of record**.
 
 The blueprint's thesis is the **AWS Bedrock AgentCore-native path**:
 the agent runs behind the real `BedrockAgentCoreApp` from the
@@ -292,6 +294,57 @@ programme.
   sent to any reporter, and nothing is ever submitted to a
   regulator.
 
+## What Round 6 adds
+
+- **The medical-reviewer gate — dual control, in code**
+  (`pv_cases/review.py`): everything before this round prepares
+  the case; this round is where named humans own it. A case is
+  `medically_reviewed` only when two reviewers — one in the
+  **medical reviewer** role, one in the **safety reviewer**
+  role, **two distinct people** — have each recorded an
+  accepting decision. The same person attempting the second
+  role is refused at recording time, with the refusal named;
+  one role's accept alone leaves the case visibly
+  `awaiting_second_review` on every read.
+- **Review acts bind the record they decided**: each act is an
+  insert-only artefact (stored, and recorded on the case's
+  evidence chain) naming the reviewer, role, decision and
+  rationale, and binding the exact artefact versions reviewed —
+  the current assessment, the current coding decisions, and the
+  assembled summary — by id and hash. (A summary's version is
+  its content hash: summary ids are per-assembly sequence
+  numbers, so identical text re-assembled is the same
+  narrative; changed text is a new one.)
+- **Staleness is derived, never declared**: when a bound
+  artefact is superseded — a follow-up folds new facts in, a
+  coder settles a term — every act bound to the old version
+  stops counting toward the gate. The acts stay on the trail,
+  labelled stale with the superseding artefacts named; the
+  case falls back to awaiting review. Nothing is deleted and
+  no act is ever edited.
+- **A reject holds the case**: while a current reject stands,
+  the case is in `review_hold` with the reason on its face —
+  an accept over the same record does not clear it. The hold
+  clears the way drug safety actually clears it: the record
+  changes, the stale reject falls away with the version it
+  bound, and a fresh dual review decides the new record.
+- **The review queue**: holds first, then cases one decision
+  from done, then stale reviews, then first reviews — each
+  entry carrying the case id, its seriousness, expectedness,
+  clock position and review state, and **nothing that
+  identifies the patient or the reporter**. PHI minimisation
+  is structural, in the entry model itself. A versioned
+  **review pack** (`2026.10.1`) states the roles, the
+  decisions, and the completion / disagreement / staleness
+  rules every act is recorded under.
+- **Surfaces**: the pack, the queue, the per-case review
+  position and trail, and the act intake in the API and CLI;
+  the demo walks a dual review, a hold, and the hold's
+  clearance by a landed follow-up. Migration `0006` in both
+  dialects. `medically_reviewed` is an internal state of this
+  system — it is not a submission, and nothing is ever
+  submitted to a regulator.
+
 ## Quick start
 
 ```bash
@@ -309,8 +362,18 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 5 of 20.** Built and gate-green: everything in Rounds
-  1–4, plus the follow-up workflow — requests raised in code from
+- **Round 6 of 20.** Built and gate-green: everything in Rounds
+  1–5, plus the medical-reviewer gate — dual control enforced in
+  code (two roles, two distinct named people, the same-person
+  second role refused at recording time), review acts as
+  insert-only artefacts binding the assessment, coding decisions
+  and summary by id and hash and recorded on the evidence chain,
+  staleness derived from supersession with stale acts labelled
+  and counted for nothing, rejects holding a case until the
+  record they bound is superseded and a fresh dual review
+  decides the new one, the PHI-minimised review queue, the
+  versioned review pack, migration 0006, and API/CLI parity for
+  all of it. Round 5 shipped: the follow-up workflow — requests raised in code from
   the gate's, dictionary's and assessment engine's named
   absences, each item naming the exact field a follow-up report
   must supply, due dates priced by the versioned follow-up pack;
