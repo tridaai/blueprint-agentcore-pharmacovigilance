@@ -26,10 +26,10 @@ says, per service, what is real today and what is a double.
 | AgentCore service | Production role in this blueprint | R1 status |
 |---|---|---|
 | **Runtime** | Hosts the agent: ARM64 container, `POST /invocations` + `GET /ping` on 8080; one session = one case-working session | **Real.** `BedrockAgentCoreApp` from `bedrock-agentcore==1.25.1`; contract exercised over ASGI transport in `tests/test_runtime_contract.py`; `app.run(port=8080)` is the container entrypoint |
-| **Memory** | Short-term per session; long-term semantic + episodic strategies for patient/product history feeding case assembly | **Port + local double (Round 11).** R1 assembly reads the case's own evidence only |
-| **Gateway** | Safety-database, product-dictionary and literature sources as MCP targets; every production tool call traverses it | **Not wired (Round 12).** R1 tools are in-process evidence reads |
-| **Policy** | Cedar pack (role × tool × PHI caps) in ENFORCE mode on the Gateway; denials arrive as HTTP 200 + JSON-RPC −32002 and must be detected, recorded, surfaced | **Not wired (Round 12).** The denial-shape rule is recorded here so the port is designed for it from the start |
-| **Identity** | Inbound caller identity; outbound OAuth/API-key vault via `@requires_access_token` / `@requires_api_key` shapes | **Not wired (Round 12).** No outbound calls exist in R1 |
+| **Memory** | Short-term per session; long-term semantic + episodic strategies for patient/product history feeding case assembly | **Port + local double (Round 8).** `MemoryPort` with the labelled local double; recall is recorded as retrievals of references under a versioned pack with a 365-day retention rule — AgentCore Memory is the production path behind the port |
+| **Gateway** | Safety-database, product-dictionary and literature sources as MCP targets; every production tool call traverses it | **Port wired (Round 8).** The case record, patient history and dictionary tools sit behind the enforcing `GatewayService`; an AgentCore Gateway target is the production transport behind the same invoke contract |
+| **Policy** | Cedar pack (role × tool × PHI caps) in ENFORCE mode on the Gateway; denials arrive as HTTP 200 + JSON-RPC −32002 and must be detected, recorded, surfaced | **Wired (Round 8).** Pack of record at `infra/policies/pv-gateway-policy.cedar` with its executable mirror in code (parity graded by test); denials are constructed as the −32002 envelope in one place, recorded insert-only, and the denied tool never executes |
+| **Identity** | Inbound caller identity; outbound OAuth/API-key vault via `@requires_access_token` / `@requires_api_key` shapes | **Partial (Round 8).** Gateway calls carry a named principal + pack role, judged before any tool runs; outbound vault shapes land with the AWS account integration |
 | **Evaluations** | Online evaluators (correctness, faithfulness, harm) sampled on live traffic | **Config later (Round 20 infra).** The repo's own deterministic eval gate (`evals/run_evals.py`) is primary and already binding |
 | **Observability** | OpenTelemetry spans per case step; CloudWatch GenAI dashboards | **Partial.** Structured JSON logs with session/case ids (`pv_cases/logging_config.py`); spans land with the infra round |
 
@@ -150,6 +150,36 @@ other blueprints already cover the LangGraph pattern.
     against only by the export record held outside the package.
     Sealing and export produce a reviewable case file, never a
     submission: nothing leaves for a regulator from this system.
+12. (R8) Free text is screened before it can be drafted from:
+    every report narrative and event description is screened in
+    code against the versioned screening pack the moment its
+    payload lands on a case's chain (intake and follow-up
+    alike). A field with findings is held — excluded from the
+    assembler's facts, which are the only road from source text
+    to a summary statement or a model prompt — under a
+    content-addressed, insert-only quarantine record naming the
+    rules that fired; the source payload is never edited. A
+    hold ends only by a named reviewer's release act with a
+    rationale, and never on a sealed case.
+13. (R8) Cross-case recall is recorded and never merges: a
+    retrieval through the Memory port names its strategy, its
+    requesting case and its matches by reference (case ids,
+    artefact ids, coded facts), carries its subject as a sha256
+    fingerprint rather than the key, and writes nothing to any
+    source case — the only chain note is on the requesting
+    case, which is why a sealed requesting case refuses recall.
+    Retrievals expire under the memory pack's retention rule as
+    tombstones: kept, counted, never served, never deleted.
+14. (R8) Tool calls are policy-judged before they run: the
+    gateway evaluates the versioned policy pack (first-match
+    deny, default deny) over (principal, role, tool, PHI
+    family), records every call insert-only with the deciding
+    rule before anything executes, and answers a denial as the
+    platform does — HTTP 200 with a JSON-RPC −32002 envelope —
+    with the denied tool never invoked. The pack of record is
+    the Cedar artefact in `infra/`; its executable mirror in
+    code is graded to carry the same rule ids, roles and
+    catalogue.
 
 ## Round map
 

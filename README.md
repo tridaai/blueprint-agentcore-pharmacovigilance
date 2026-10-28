@@ -416,6 +416,72 @@ programme.
   package is a reviewable case file, not a submission —
   nothing is ever submitted to a regulator.**
 
+## What Round 8 adds
+
+- **Injection quarantine — Law 7 made mechanical**
+  (`pv_cases/quarantine.py`): every free-text field that enters
+  a case — a report's narrative and its events' descriptions,
+  at intake and in every follow-up report — is screened in code
+  against a versioned **screening pack** (`2026.10.1`:
+  instruction directives, system-channel and role claims,
+  verdict directives aimed at the case's own seriousness or
+  closure, regulator-authority impersonation, long encoded
+  runs). A field with findings earns a **quarantine record** —
+  content-addressed over (case, evidence item, field, text
+  hash), insert-only, recorded on the chain, naming every rule
+  that fired with the matched span — and is **held**: the
+  assembler's facts exclude it, so the text reaches neither a
+  summary statement nor any model profile's prompt. The source
+  payload is never edited; it stands on the chain as reported.
+  A hold ends only by a **named reviewer's release act** with a
+  stated rationale, after which the field is usable again as
+  data — quoted, cited, never obeyed. A sealed case's holds
+  cannot be released. The benign planted book earns no records:
+  screening's false positives are an eval counter, at zero.
+- **The AgentCore Memory port** (`pv_cases/memory.py`): a
+  `MemoryPort` with a labelled local double — AgentCore Memory
+  is the production path — and a **memory pack** (`2026.10.1`)
+  stating the strategies (same patient, same product + coded
+  term, coding precedent), the minimisation rule and the
+  retention rule. A recall is a recorded **retrieval**: the
+  matches are *references* — case ids, the artefact ids that
+  evidence the match, the coded facts it rests on — never a
+  copy of another case's facts, never a patient or reporter
+  field; the subject is carried as a sha256 fingerprint, not
+  the key. Recall **never merges**: neither case's report or
+  chain changes, beyond the retrieval's own note on the
+  requesting case's chain. Retrievals expire at the pack's 365
+  days as **tombstones** — kept, counted, never served, never
+  deleted. A sealed case refuses recall: its file is closed.
+- **The Gateway + Policy ports** (`pv_cases/gateway.py`,
+  `infra/policies/pv-gateway-policy.cedar`): the tool catalogue
+  (case record, patient history, dictionary lookup — each with
+  its PHI family) sits behind an enforcing gateway judged by a
+  versioned **policy pack** (`2026.10.1`), whose pack of record
+  is the Cedar artefact in `infra/`; a test grades that the
+  artefact and the executable pack carry exactly the same rule
+  ids. Evaluation is first-match deny, default deny: unnamed
+  principals, unknown roles and tools, the external auditor
+  reaching for PHI, and cross-case patient history for any role
+  but the medical reviewer are denied before the permit list is
+  consulted. A denial is the platform's own shape — **HTTP 200
+  carrying a JSON-RPC error, code −32002**, never a 403 — and
+  the denied tool **never executes** (graded with a counting
+  double). Every call, allow or deny, is recorded insert-only
+  with the rule that decided it: the record is how a denial is
+  surfaced, since the wire answer is a bland 200.
+- **Surfaces**: quarantine views + release, memory recall +
+  retrievals + retention + coding precedents, and gateway
+  pack / tools / invoke / calls in the API; `quarantine`,
+  `release-quarantine`, `memory-recall`, `memory-retrievals`,
+  `memory-retention`, `memory-precedents`, `gateway-invoke`,
+  `gateway-calls` and the three pack reads in the CLI; and a
+  demo that holds a planted instruction out of a summary,
+  releases it under a named act, recalls the duplicate pair's
+  other half by reference, and watches an auditor's call denied
+  in the platform's shape. Migration `0008` in both dialects.
+  And still: **nothing is ever submitted to a regulator.**
+
 ## Quick start
 
 ```bash
@@ -433,8 +499,20 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 7 of 20.** Built and gate-green: everything in Rounds
-  1–6, plus case sealing and export — a named seal act taken
+- **Round 8 of 20.** Built and gate-green: everything in Rounds
+  1–7, plus the injection quarantine (report text screened in
+  code at intake and follow-up against a versioned pack; held
+  fields reach no fact, summary or prompt until a named
+  reviewer's release act; sealed holds stay held), the
+  AgentCore Memory port (recall recorded as retrievals of
+  references — case and artefact ids, coded facts, a
+  fingerprinted subject — never merges, expiring as tombstones
+  under a 365-day retention pack), and the Gateway + Policy
+  ports (a Cedar pack of record in `infra/` with its executable
+  mirror in code, first-match/default deny, denials as HTTP 200
+  + JSON-RPC −32002 with the denied tool never executing, every
+  call recorded); migration 0008, and API/CLI parity for all of
+  it. Round 7 shipped: case sealing and export — a named seal act taken
   only from `medically_reviewed`, binding the full artefact
   inventory by content hash, the evidence-chain head and the
   pack versions in force; post-seal immutability enforced at
@@ -503,8 +581,11 @@ the default model profile is offline and deterministic.
   a sponsor does with it is the sponsor's regulated process.
 - **Live AWS calls are stub-tested until an account is wired**: the
   `bedrock` model profile refuses loudly without region + model id,
-  and the AgentCore Memory / Gateway / Policy surfaces are ports
-  with local doubles (Rounds 11–13). The Runtime entrypoint itself
+  and the AgentCore Memory / Gateway / Policy surfaces (Round 8)
+  are ports with local doubles — the port contracts, the policy
+  enforcement and the retrieval records are real and graded; the
+  AWS-side services behind them are the account-integration step.
+  The Runtime entrypoint itself
   is the real SDK app, verified over its HTTP contract in tests.
 - **Docker image build was not run** in the build sandbox (no
   daemon); the Dockerfile (multi-stage, non-root, ARM64) and the
