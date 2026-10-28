@@ -128,6 +128,28 @@ other blueprints already cover the LangGraph pattern.
     are insert-only, recorded on the evidence chain, and the
     review queue's entries carry no patient- or
     reporter-identifying field by construction.
+11. (R7) A case file closes only by sealing, and only from
+    `medically_reviewed`: a named sealer's act binds the full
+    artefact inventory (every artefact id + content hash, by
+    kind — including every evidence item by its chain hash),
+    the evidence-chain head at seal time, the review bindings
+    the gate was satisfied over, and the pack versions in
+    force. From that moment the case is a closed record: every
+    writing service refuses new artefacts for it with the seal
+    named, and no unseal surface exists — a correction is a new
+    case. The export package is assembled only from the sealed
+    inventory and is byte-deterministic (it carries no export
+    timestamp); each serving is recorded in the store and on
+    the evidence chain with the hash of the exact bytes served.
+    The offline verifier re-performs the package from the
+    package alone — artefact hashes, chain linkage, inventory
+    exactness, the two-distinct-people review gate over the
+    sealed bindings, and the clock arithmetic — and reports the
+    hash it computed over the package as presented, never a
+    hash the package claims; a full re-hash forgery is anchored
+    against only by the export record held outside the package.
+    Sealing and export produce a reviewable case file, never a
+    submission: nothing leaves for a regulator from this system.
 
 ## Round map
 

@@ -345,6 +345,77 @@ programme.
   system — it is not a submission, and nothing is ever
   submitted to a regulator.
 
+## What Round 7 adds
+
+- **Case sealing — the file closes under a named act**
+  (`pv_cases/sealing.py`): once a case stands
+  `medically_reviewed`, a named sealer can seal its file. The
+  seal artefact binds the case's **complete artefact
+  inventory** — every artefact id with its content hash, by
+  kind: the case, its coding decisions with their dictionary
+  versions, its assessments, its summaries, the review acts,
+  the follow-up requests and their acts, and every evidence
+  item by its chain hash — plus the evidence chain's **head
+  hash at seal time**, the dual-control review bindings the
+  gate was satisfied over, and the pack versions in force. A
+  case that is not medically reviewed — awaiting a role, on a
+  review hold, or stale after a post-review supersession —
+  cannot be sealed, and the refusal names the blocker. A case
+  seals once. Rules live in a versioned **sealing pack**
+  (`2026.10.1`).
+- **A sealed case is a closed record**: after sealing, every
+  writing service refuses new artefacts for the case —
+  follow-ups, recodes, coder resolutions, new assessments,
+  new summaries, new review acts — with the seal named in the
+  refusal. There is **no unseal surface anywhere**: if a sealed
+  case ever needs correcting, the correction is a new case.
+  That is deliberate, and it is how regulated case files work.
+- **A deterministic export package, assembled only from the
+  seal**: a single JSON document (`pv-case-export/1`) carrying
+  exactly the sealed inventory — case facts as recorded (the
+  report of record with its follow-ups folded in), coding
+  decisions, assessments with their clock states, review acts,
+  follow-up history, evidence payloads, and the seal itself —
+  plus a plain-text rendering. The package carries no export
+  timestamp: exporting the same sealed case twice yields
+  **byte-identical bytes and the same package hash**.
+- **Every serving is recorded**: an export is itself an
+  artefact — who exported, when, and the hash of the exact
+  bytes served, recorded in the store and on the case's
+  evidence chain. There is no export button for an unsealed
+  case; the attempt is refused, naming the seal requirement.
+- **An offline verifier that re-performs the package**
+  (`pv_cases/verify.py`, also `pv-agent-verify-export`): it
+  takes only a package file — no database, no network — and
+  checks, each named: the package's shape; **every artefact
+  hash** recomputing from the payloads carried; the **evidence
+  chain linkage** re-linking from the genesis hash to the
+  seal's head; the **seal inventory** matching the package
+  exactly, nothing missing, nothing extra; the **review
+  gate** — two distinct people, one per role, accepting over
+  bindings that resolve to the sealed artefacts at their bound
+  hashes; and the **clock arithmetic** re-performing from the
+  sealed facts (day zero, obligation class, deadline). Tamper
+  with an altered figure, a dropped artefact, swapped review
+  acts or a relinked chain and the verdict fails with the
+  broken checks named. One honest limit: a package is
+  self-contained, so a forger who recomputes *every* hash —
+  including the seal's — defeats package-only checks; that is
+  what the export record's hash, held in the store and on the
+  chain, anchors against. The verifier reports the hash it
+  computed over the package as presented, never one the
+  package claims.
+- **Surfaces**: seal / seal-read / export / export-list /
+  text-export / verify in the API, `seal`, `seal-case`,
+  `export-case`, `verify-export` and `sealing-pack` in the
+  CLI, and a demo that seals the reviewed case, refuses a
+  further artefact in the seal's name, serves the package
+  twice byte-identically, passes it through the verifier check
+  by check, and fails a package whose clock deadline was
+  altered. Migration `0007` in both dialects. And still: **the
+  package is a reviewable case file, not a submission —
+  nothing is ever submitted to a regulator.**
+
 ## Quick start
 
 ```bash
@@ -362,8 +433,21 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 6 of 20.** Built and gate-green: everything in Rounds
-  1–5, plus the medical-reviewer gate — dual control enforced in
+- **Round 7 of 20.** Built and gate-green: everything in Rounds
+  1–6, plus case sealing and export — a named seal act taken
+  only from `medically_reviewed`, binding the full artefact
+  inventory by content hash, the evidence-chain head and the
+  pack versions in force; post-seal immutability enforced at
+  every writing service with the seal named and no unseal
+  surface anywhere; a byte-deterministic export package
+  assembled only from the sealed inventory, with every serving
+  recorded in the store and on the evidence chain; and an
+  offline verifier that re-performs the package's hashes,
+  chain linkage, inventory exactness, dual-control review gate
+  and clock arithmetic from the package alone, failing tampered
+  packages with the broken checks named; migration 0007, and
+  API/CLI parity for all of it. Round 6 shipped: the
+  medical-reviewer gate — dual control enforced in
   code (two roles, two distinct named people, the same-person
   second role refused at recording time), review acts as
   insert-only artefacts binding the assessment, coding decisions

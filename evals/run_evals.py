@@ -1,4 +1,4 @@
-"""Eval gate — Rounds 1–6 (pharmacovigilance case agent).
+"""Eval gate — Rounds 1–7 (pharmacovigilance case agent).
 
 Runs the planted feed through the real service graph on a throwaway
 SQLite store and grades the guarantees. Every counter is
@@ -152,6 +152,23 @@ Round 6 (medical review — dual control), graded over the book:
                                  or delete for review acts, or a
                                  case's evidence chain failing with
                                  review acts recorded on it
+
+Round 7 (sealing, export, the offline verifier), graded over the
+book the review round leaves behind:
+  seal_unreviewed_case_sealed    a seal taken over the stale
+                                 case, or under an unnamed sealer
+  seal_post_seal_artefact_accepted a sealed case taking a new
+                                 review act, recode, assessment,
+                                 summary or follow-up request
+  export_nondeterministic        two exports of one sealed case
+                                 differing in bytes or in hash
+  export_tampered_package_verified the verifier passing a
+                                 package with an altered figure, a
+                                 dropped artefact, swapped review
+                                 acts or a relinked chain — or
+                                 failing the untampered package
+  export_unsealed_case_served    an export served for a case with
+                                 no seal standing
 
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
@@ -1114,7 +1131,131 @@ def main() -> int:
     )
     counters["review_acts_edited_in_place"] = edits
 
-    print("Rounds 1–6 evals — pharmacovigilance case agent")
+    # ---------------- Round 7: sealing, export, verifier ----------------
+    # The seal is taken only from medically_reviewed, by a named
+    # sealer; a sealed case refuses every later artefact; the
+    # export is byte-deterministic and recorded; and the offline
+    # verifier re-performs the package's guarantees, failing
+    # tampered packages with the broken check named.
+    import copy as _copy
+    import hashlib as _hashlib
+
+    from pv_cases.agent import CitationRefusal as _Refusal
+    from pv_cases.assessment import AssessmentError as _AssessErr
+    from pv_cases.coding import CodingError as _CodingErr
+    from pv_cases.evidence import canonical_json as _canon
+    from pv_cases.evidence import item_hash as _item_hash
+    from pv_cases.followup import FollowUpError as _FUErr
+    from pv_cases.sealing import SealError
+    from pv_cases.verify import verify_package
+
+    seal_wrong = 0
+    # 0307's review is stale (Round 6) — sealing it must refuse.
+    try:
+        svc.sealing.seal_case(f"{C}0307", "PV Operations Lead", DAY)
+        seal_wrong += 1
+    except SealError:
+        pass
+    # An unnamed sealer is refused even over a reviewed case.
+    try:
+        svc.sealing.seal_case(f"{C}0304", " ", DAY)
+        seal_wrong += 1
+    except SealError:
+        pass
+    counters["seal_unreviewed_case_sealed"] = seal_wrong
+
+    svc.sealing.seal_case(f"{C}0304", "PV Operations Lead", DAY)
+
+    post_seal_wrong = 0
+    for attempt in (
+        lambda: svc.review.record_review(
+            f"{C}0304", "Dr A. Rao", "medical_reviewer", "accept", "", DAY
+        ),
+        lambda: svc.coding.code_case(f"{C}0304", DAY),
+        lambda: svc.assessment.assess_case(f"{C}0304", DAY),
+        lambda: svc.assembler.assemble(f"{C}0304", DAY),
+        lambda: svc.followup.raise_for_case(f"{C}0304", DAY),
+    ):
+        try:
+            attempt()
+            post_seal_wrong += 1  # a sealed case took a new artefact
+        except (
+            ReviewError,
+            _CodingErr,
+            _AssessErr,
+            _Refusal,
+            _FUErr,
+        ):
+            pass
+    counters["seal_post_seal_artefact_accepted"] = post_seal_wrong
+
+    det_wrong = 0
+    record1, package1 = svc.sealing.export_case(
+        f"{C}0304", "PV Operations Lead", DAY
+    )
+    record2, package2 = svc.sealing.export_case(
+        f"{C}0304", "Q. Auditor", date(2026, 10, 26)
+    )
+    det_wrong += (
+        svc.sealing.package_bytes(package1)
+        != svc.sealing.package_bytes(package2)
+    )
+    det_wrong += record1.package_hash != record2.package_hash
+    det_wrong += len(svc.sealing.list_exports(f"{C}0304")) != 2
+    counters["export_nondeterministic"] = det_wrong
+
+    tamper_wrong = 0
+    clean = verify_package(package1)
+    tamper_wrong += clean.verdict != "pass"
+    tamper_wrong += clean.package_hash != record1.package_hash
+
+    def _failed_names(pkg) -> set[str]:
+        return {c.name for c in verify_package(pkg).checks if not c.passed}
+
+    altered = _copy.deepcopy(package1)
+    for entry in altered["artefacts"]:
+        if entry["kind"] == "assessment":
+            entry["payload"]["clock"]["deadline"] = "2026-12-31"
+    tamper_wrong += "artefact_hashes" not in _failed_names(altered)
+
+    dropped = _copy.deepcopy(package1)
+    dropped["artefacts"] = [
+        e for e in dropped["artefacts"] if e["kind"] != "coding_decision"
+    ]
+    tamper_wrong += "seal_inventory_exact" not in _failed_names(dropped)
+
+    swapped = _copy.deepcopy(package1)
+    acts = [e for e in swapped["artefacts"] if e["kind"] == "review_act"]
+    acts[0]["payload"], acts[1]["payload"] = (
+        acts[1]["payload"],
+        acts[0]["payload"],
+    )
+    tamper_wrong += "review_gate" not in _failed_names(swapped)
+
+    relinked = _copy.deepcopy(package1)
+    first = relinked["evidence"][0]
+    first["payload"]["report_id"] = "RPT-FORGED"
+    first["item"]["payload_sha256"] = _hashlib.sha256(
+        _canon(first["payload"])
+    ).hexdigest()
+    first["item"]["item_hash"] = _item_hash(
+        first["item"]["prev_hash"],
+        first["item"]["payload_sha256"],
+        first["item"]["kind"],
+        first["item"]["object_key"],
+    )
+    tamper_wrong += "chain_linkage" not in _failed_names(relinked)
+    counters["export_tampered_package_verified"] = tamper_wrong
+
+    unsealed_wrong = 0
+    try:
+        svc.sealing.export_case(f"{C}0305", "PV Operations Lead", DAY)
+        unsealed_wrong += 1  # served without a seal
+    except SealError:
+        pass
+    counters["export_unsealed_case_served"] = unsealed_wrong
+
+    print("Rounds 1–7 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]
