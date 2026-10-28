@@ -5,6 +5,7 @@ same graph with different settings."""
 
 from __future__ import annotations
 
+from pv_cases.access import AccessControl
 from pv_cases.agent import CaseAssembler, model_for_profile
 from pv_cases.assessment import AssessmentService
 from pv_cases.coding import CodingService, lookup_event
@@ -144,6 +145,22 @@ class Services:
         self.gateway.register_tool(
             TOOL_DICTIONARY_LOOKUP, self._dictionary_lookup
         )
+        # Round 10: the access control — one guard over the
+        # store's denial log, bound onto every service that
+        # records a named act, so a principal carried on any of
+        # those surfaces is judged by the same pack and every
+        # refusal lands in the same log.
+        self.access = AccessControl(self.store)
+        for guarded in (
+            self.review,
+            self.sealing,
+            self.quarantine,
+            self.followup,
+            self.dedup,
+            self.coding,
+            self.memory,
+        ):
+            guarded.access = self.access
 
     def _dictionary_lookup(self, verbatim: str) -> dict:
         """The gateway's dictionary tool: the coding layer's own

@@ -125,6 +125,12 @@ class CaseStore(Protocol):
     def list_memory_retrievals(self, case_id: str | None = None) -> list[MemoryRetrieval]: ...
     def add_gateway_call(self, call: GatewayCall) -> None: ...
     def list_gateway_calls(self) -> list[GatewayCall]: ...
+    # Round 10: the access denial log. Insert-only, like
+    # everything above — a refusal is history, and the log is
+    # itself a guarded surface (see pv_cases.access).
+    def add_access_denial(self, denial) -> None: ...
+    def list_access_denials(self) -> list: ...
+    def count_access_denials(self) -> int: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -857,6 +863,32 @@ class SqlCaseStore:
         )
         return [GatewayCall.model_validate_json(r[0]) for r in rows]
 
+    def add_access_denial(self, denial) -> None:
+        self._run(
+            "INSERT INTO access_denials (denial_id, seq, principal_id,"
+            " role, surface, payload) VALUES (?,?,?,?,?,?)",
+            (
+                denial.denial_id,
+                denial.seq,
+                denial.principal_id,
+                denial.role,
+                denial.surface,
+                denial.model_dump_json(),
+            ),
+        )
+
+    def list_access_denials(self) -> list:
+        from pv_cases.access import AccessDenial
+
+        rows = self._run(
+            "SELECT payload FROM access_denials ORDER BY seq", fetch="all"
+        )
+        return [AccessDenial.model_validate_json(r[0]) for r in rows]
+
+    def count_access_denials(self) -> int:
+        rows = self._run("SELECT COUNT(*) FROM access_denials", fetch="all")
+        return int(rows[0][0])
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -883,6 +915,7 @@ class InMemoryCaseStore:
         self.quarantine_acts: dict[str, QuarantineAct] = {}
         self.memory_retrievals: dict[str, MemoryRetrieval] = {}
         self.gateway_calls: dict[str, GatewayCall] = {}
+        self.access_denials: dict[str, object] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -1113,3 +1146,12 @@ class InMemoryCaseStore:
 
     def list_gateway_calls(self) -> list[GatewayCall]:
         return [self.gateway_calls[k] for k in sorted(self.gateway_calls)]
+
+    def add_access_denial(self, denial) -> None:
+        self.access_denials[denial.denial_id] = denial
+
+    def list_access_denials(self) -> list:
+        return sorted(self.access_denials.values(), key=lambda d: d.seq)
+
+    def count_access_denials(self) -> int:
+        return len(self.access_denials)
