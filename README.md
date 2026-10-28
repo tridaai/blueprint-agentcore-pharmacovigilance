@@ -90,6 +90,42 @@ programme.
   follow-ups, missed duplicate suspicion, uncited statements,
   unresolvable citations, chain failures.
 
+## What Round 2 adds
+
+- **Real de-duplication** (`pv_cases/dedup.py`), replacing the
+  exact-key suspicion flag: a versioned rule pack (`2026.10.1`,
+  data in code) scores every candidate pair on patient identity,
+  product, event terms, onset dates and reporter — deterministic
+  scoring with every point a named signal — and three gates
+  (patient identity unproven, event terms unrelated, onset too far
+  apart, plus a hard date-of-birth contradiction) fix the band at
+  *not a duplicate* regardless of score. Bands: definite /
+  probable / not a duplicate.
+- **Links, never merges.** A definite or probable finding creates
+  a link between the two cases and routes it to a named human
+  queue; the later case is marked `duplicate_linked` and stays
+  fully readable. A named human confirms — the later case closes
+  as a duplicate, by recorded act on its own evidence chain — or
+  rejects, and the case proceeds. There is no merge and no delete
+  anywhere: each report's provenance is itself evidence.
+- **Planted near-miss traps**, graded in tests and evals: same
+  patient + product with a different event (a genuine second
+  case), a namesake whose date of birth contradicts the match, the
+  same event recurring a year later, and a probable pair that only
+  a human may settle.
+- **Patient/product history views** (`pv_cases/history.py`):
+  derived in code from stored artefacts only, content-addressed
+  (rebuilding over unchanged inputs returns the stored view),
+  with identity facts carrying their source case and **conflicts
+  shown, never merged** — two ages on record both stand. The R1
+  assembler consumes a built patient view: it is captured on the
+  case's evidence chain and its counts enter the summary as cited
+  statements, under the same citation discipline as everything
+  else.
+- **API + CLI parity** for dedup candidates, the decision queue,
+  link confirm/reject, and patient/product history views;
+  migration `0002` in both dialects.
+
 ## Quick start
 
 ```bash
@@ -107,9 +143,13 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 1 of 20.** Built and gate-green: models + validity gate,
-  intake + feed, evidence chain, store + migration 0001, Runtime
-  entrypoint, agent step with cited summaries, API, demo, evals.
+- **Round 2 of 20.** Built and gate-green: everything in Round 1,
+  plus the dedup rule pack with human link decisions, patient and
+  product history views consumed by the assembler, migration 0002,
+  and API/CLI parity for both. Round 1 shipped: models + validity
+  gate, intake + feed, evidence chain, store + migration 0001,
+  Runtime entrypoint, agent step with cited summaries, API, demo,
+  evals.
 - **Dictionary coding is Round 3** — verbatim terms are stored and
   carried into summaries as reported; no MedDRA-style coding exists
   yet, and the dictionary this blueprint will use is a repo-built

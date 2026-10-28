@@ -74,6 +74,12 @@ other blueprints already cover the LangGraph pattern.
    digest and link (`EvidenceChain.verify_chain`).
 4. Duplicate suspicion is exact-key and mechanical in R1; it flags
    and never merges.
+5. (R2) A duplicate is a scored assessment plus a human decision:
+   the rule pack's bands create links, named humans confirm or
+   reject them, and closed-as-duplicate cases stay readable with
+   their chains intact. No merge or delete path exists.
+6. (R2) History views are derived from stored artefacts only and
+   content-addressed; identity conflicts are shown, never merged.
 
 ## Round map
 

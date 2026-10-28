@@ -3,7 +3,9 @@
 Walks every planted report through the validity gate, shows which
 became cases and which became follow-up tasks, flags the suspected
 duplicate, assembles the main case's summary with its citations, and
-verifies the evidence chain. Run with ``make demo``.
+verifies the evidence chain. Round 2 adds the dedup queue (the
+planted pair, assessed definite by the rule pack, awaiting a human)
+and the A.B. patient's history view. Run with ``make demo``.
 """
 
 from __future__ import annotations
@@ -49,6 +51,18 @@ def run_demo(out=print) -> Services:
         out(f"  - {stmt.text}  [{cites}]")
     ok = svc.chain.verify_chain("CASE-RPT-2026-0001")
     out(f"Evidence chain valid: {ok}")
+
+    out("-" * 62)
+    queue = svc.dedup.pending_queue()
+    out(f"Dedup queue: {len(queue)} link(s) awaiting a named human decision")
+    for link in queue:
+        out(f"  {link.link_id}: {link.case_b_id} duplicates {link.case_a_id} [{link.band.value}]")
+    view = svc.history.patient_history_for_case("CASE-RPT-2026-0005", DEMO_DAY)
+    terms = ", ".join(f"{t} x{n}" for t, n in sorted(view.event_term_counts.items()))
+    out(
+        f"History for patient {view.patient_key}: {view.case_count} case(s), "
+        f"{view.event_count} event(s) — {terms}"
+    )
     return svc
 
 
