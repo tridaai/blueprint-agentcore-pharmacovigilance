@@ -80,6 +80,14 @@ other blueprints already cover the LangGraph pattern.
    their chains intact. No merge or delete path exists.
 6. (R2) History views are derived from stored artefacts only and
    content-addressed; identity conflicts are shown, never merged.
+7. (R3) Coding is a versioned dictionary lookup with provenance:
+   decisions pin (case, dictionary version, verbatim as reported)
+   and record the match path (exact / normalised / synonym /
+   manual); there is no fuzzy path. Uncoded terms are named
+   blockers with a human review queue, and a summary presenting
+   an uncoded term as coded is refused in code. Dictionary
+   versions and coding decisions are insert-only artefacts — a
+   dictionary change is a new version, never an edit.
 
 ## Round map
 

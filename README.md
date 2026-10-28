@@ -126,6 +126,54 @@ programme.
   link confirm/reject, and patient/product history views;
   migration `0002` in both dialects.
 
+## What Round 3 adds
+
+- **A terminology extract, built for this repo** (`pv_cases/coding.py`):
+  a versioned dictionary artefact (`2026.10.1`) of reporter
+  verbatims → preferred terms grouped under system organ classes,
+  plus a product dictionary (reported name → coded product and
+  substance). It is a reduced, original extract written for this
+  blueprint — **not licensed MedDRA**, and nothing here connects
+  to the real dictionary.
+- **Coding as a lookup in code, never a guess**: three match
+  paths in stated precedence — exact (the verbatim as reported),
+  normalised (case/punctuation folding), synonym (a recorded
+  synonym of the entry). There is deliberately **no fuzzy or
+  string-similarity path**: a verbatim that merely resembles a
+  preferred term is not coded to it. Every coding is a stored
+  `CodingDecision` pinned to (case, dictionary version, verbatim
+  as reported) with the match path recorded.
+- **Uncoded is a first-class outcome**: a verbatim with no entry
+  stays uncoded — verbatim preserved, reason named
+  (`no_dictionary_entry`, or `ambiguous_match` with the competing
+  terms recorded when a verbatim genuinely maps to two) — and
+  raises a task in the coding-review queue. A named human coder
+  resolves it by choosing a term that exists in the dictionary;
+  the resolution is a new manual decision superseding the uncoded
+  one by link, recorded on the case's evidence chain. Automatic
+  coding never supersedes a human's decision.
+- **Dictionary additions are new versions, never edits**: a coder
+  may propose an addition, and it takes effect only as a new
+  dictionary version. Dictionary versions and coding decisions
+  are insert-only artefacts in the store — there is no update or
+  delete for them — so a decision always means what it meant
+  under the version it pinned. Additions that would rewrite an
+  existing mapping or manufacture an ambiguity are refused.
+- **Consumers**: the history views count events by preferred
+  term where coded, with uncoded verbatims counted separately and
+  named; the assembler captures each case's coding on its
+  evidence chain and the summary presents coded terms with their
+  labels and uncoded terms as uncoded — a summary that presents
+  an uncoded term as coded is refused in code, wholesale, on the
+  same terms as an unresolvable citation.
+- **Planted coding fixtures**, graded in tests and evals: one
+  case per match path, the exact-beats-synonym precedence case,
+  a near-miss that stays uncoded, an ambiguous synonym only a
+  coder may settle, and an uncoded product name.
+- **API + CLI parity** for coding reads, the uncoded queue,
+  coder resolutions, recodes, dictionary version reads and
+  additions; migration `0003` in both dialects.
+
 ## Quick start
 
 ```bash
@@ -143,19 +191,25 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 2 of 20.** Built and gate-green: everything in Round 1,
-  plus the dedup rule pack with human link decisions, patient and
-  product history views consumed by the assembler, migration 0002,
-  and API/CLI parity for both. Round 1 shipped: models + validity
-  gate, intake + feed, evidence chain, store + migration 0001,
-  Runtime entrypoint, agent step with cited summaries, API, demo,
-  evals.
-- **Dictionary coding is Round 3** — verbatim terms are stored and
-  carried into summaries as reported; no MedDRA-style coding exists
-  yet, and the dictionary this blueprint will use is a repo-built
-  extract, never the licensed dictionary itself.
-- **The seriousness engine is Round 4** — R1 makes no seriousness,
-  expectedness or causality judgement of any kind.
+- **Round 3 of 20.** Built and gate-green: everything in Rounds
+  1–2, plus dictionary coding — the tiered lookup with recorded
+  match paths, pinned `CodingDecision` artefacts, the uncoded
+  review queue with named coder resolutions, dictionary additions
+  as new versions only, history views and summaries consuming the
+  coding layer, migration 0003, and API/CLI parity for all of it.
+  Round 2 shipped: the dedup rule pack with human link decisions,
+  patient and product history views consumed by the assembler,
+  migration 0002. Round 1 shipped: models + validity gate, intake
+  + feed, evidence chain, store + migration 0001, Runtime
+  entrypoint, agent step with cited summaries, API, demo, evals.
+- **The dictionary is a repo-built extract, not licensed
+  MedDRA** — a reduced, original terminology written for this
+  blueprint (12 event entries, 3 product entries at version
+  `2026.10.1`). Coding against the real dictionary is a licensing
+  and integration step this blueprint deliberately does not fake.
+- **The seriousness engine is Round 4** — no seriousness,
+  expectedness or causality judgement of any kind is made yet;
+  coded facts are staged for it.
 - **No regulator submission ever** — not in this round, not in any
   round. The system ends at an approved, exportable case file; what
   a sponsor does with it is the sponsor's regulated process.
