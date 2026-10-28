@@ -17,6 +17,11 @@ Discipline, carried from the AML blueprint's profile views:
 - Follow-up tasks (reports that never became cases) are part of a
   product's and a patient's history too: an unreportable report is
   still a signal the team chased.
+- Round 3: the views consume the cases' current coding decisions —
+  events are counted by preferred term where coded, and uncoded
+  verbatims are counted separately and named. A coding change is a
+  content change, so it produces a new view version under the same
+  content-addressing discipline.
 """
 
 from __future__ import annotations
@@ -25,8 +30,12 @@ import hashlib
 import json
 from datetime import date
 
+from pv_cases.coding import current_decisions as _current_coding
 from pv_cases.evidence import EvidenceChain
 from pv_cases.models import (
+    SUBJECT_EVENT,
+    SUBJECT_PRODUCT,
+    CodingStatus,
     HistoryEvent,
     IdentityFact,
     IntakeReport,
@@ -73,13 +82,49 @@ class HistoryService:
             out.append((task.task_id, IntakeReport.model_validate_json(raw)))
         return out
 
+    def _coding_by_case(self) -> dict[str, dict[tuple[str, int], object]]:
+        """Current coding decisions per case, keyed by (subject
+        kind, subject index) — the Round 3 layer the views count
+        from. Cases never coded simply have no entry."""
+        by_case: dict[str, dict[tuple[str, int], object]] = {}
+        for decision in _current_coding(self.store.list_coding_decisions()):
+            by_case.setdefault(decision.case_id, {})[
+                (decision.subject_kind, decision.subject_index)
+            ] = decision
+        return by_case
+
+    @staticmethod
+    def _count_coding(events_with_index, coding_for_case):
+        """Fold one case's event coding into (coded term counts,
+        uncoded verbatims, uncoded count). An event with no coding
+        decision at all is counted nowhere — absence of coding is
+        not uncodedness."""
+        coded: dict[str, int] = {}
+        uncoded_terms: list[str] = []
+        uncoded_count = 0
+        for index, event in events_with_index:
+            decision = coding_for_case.get((SUBJECT_EVENT, index))
+            if decision is None:
+                continue
+            if decision.status is CodingStatus.CODED:
+                coded[decision.preferred_term] = coded.get(decision.preferred_term, 0) + 1
+            else:
+                uncoded_count += 1
+                if event.verbatim_term not in uncoded_terms:
+                    uncoded_terms.append(event.verbatim_term)
+        return coded, uncoded_terms, uncoded_count
+
     # -- patient views ------------------------------------------------------
     def build_patient_history(self, key: str, today: date) -> PatientHistoryView:
         pairs = [(c, r) for c, r in self._case_reports() if patient_key(r.patient) == key]
         pairs.sort(key=lambda cr: cr[0].case_id)
+        coding_by_case = self._coding_by_case()
         events: list[HistoryEvent] = []
         facts: list[IdentityFact] = []
         term_counts: dict[str, int] = {}
+        coded_counts: dict[str, int] = {}
+        uncoded_terms: list[str] = []
+        uncoded_count = 0
         products: set[str] = set()
         statuses: dict[str, str] = {}
         for case, report in pairs:
@@ -97,7 +142,7 @@ class HistoryService:
                             report_id=report.report_id,
                         )
                     )
-            for event in report.events:
+            for index, event in enumerate(report.events):
                 events.append(
                     HistoryEvent(
                         case_id=case.case_id,
@@ -110,6 +155,16 @@ class HistoryService:
                 )
                 term = normalise_text(event.verbatim_term)
                 term_counts[term] = term_counts.get(term, 0) + 1
+            coded, terms, count = self._count_coding(
+                list(enumerate(report.events)),
+                coding_by_case.get(case.case_id, {}),
+            )
+            for term, n in coded.items():
+                coded_counts[term] = coded_counts.get(term, 0) + n
+            for term in terms:
+                if term not in uncoded_terms:
+                    uncoded_terms.append(term)
+            uncoded_count += count
         follow_ups = [
             task_id
             for task_id, report in self._follow_up_reports()
@@ -129,6 +184,9 @@ class HistoryService:
             "identity_conflicts": conflicts,
             "follow_up_task_ids": follow_ups,
             "case_statuses": statuses,
+            "coded_term_counts": coded_counts,
+            "uncoded_terms": sorted(uncoded_terms),
+            "uncoded_event_count": uncoded_count,
         }
         view_id = _content_id("PHV", body)
         existing = self.store.get_history_view(view_id)
@@ -144,6 +202,9 @@ class HistoryService:
             event_count=len(events),
             events=events,
             event_term_counts=term_counts,
+            coded_term_counts=coded_counts,
+            uncoded_terms=sorted(uncoded_terms),
+            uncoded_event_count=uncoded_count,
             product_codes=sorted(products),
             identity_facts=facts,
             identity_conflicts=conflicts,
@@ -176,8 +237,13 @@ class HistoryService:
             if (r.suspect_product_code or "") == product_code
         ]
         pairs.sort(key=lambda cr: cr[0].case_id)
+        coding_by_case = self._coding_by_case()
         events: list[HistoryEvent] = []
         term_counts: dict[str, int] = {}
+        coded_counts: dict[str, int] = {}
+        uncoded_terms: list[str] = []
+        uncoded_count = 0
+        uncoded_products: list[str] = []
         patient_keys: set[str] = set()
         statuses: dict[str, str] = {}
         for case, report in pairs:
@@ -196,6 +262,23 @@ class HistoryService:
                 )
                 term = normalise_text(event.verbatim_term)
                 term_counts[term] = term_counts.get(term, 0) + 1
+            case_coding = coding_by_case.get(case.case_id, {})
+            coded, terms, count = self._count_coding(
+                list(enumerate(report.events)), case_coding
+            )
+            for term, n in coded.items():
+                coded_counts[term] = coded_counts.get(term, 0) + n
+            for term in terms:
+                if term not in uncoded_terms:
+                    uncoded_terms.append(term)
+            uncoded_count += count
+            product_decision = case_coding.get((SUBJECT_PRODUCT, 0))
+            if (
+                product_decision is not None
+                and product_decision.status is CodingStatus.UNCODED
+                and product_decision.verbatim not in uncoded_products
+            ):
+                uncoded_products.append(product_decision.verbatim)
         follow_ups = [
             task_id
             for task_id, report in self._follow_up_reports()
@@ -209,6 +292,10 @@ class HistoryService:
             "patient_keys": sorted(patient_keys),
             "follow_up_task_ids": follow_ups,
             "case_statuses": statuses,
+            "coded_term_counts": coded_counts,
+            "uncoded_terms": sorted(uncoded_terms),
+            "uncoded_event_count": uncoded_count,
+            "uncoded_product_names": sorted(uncoded_products),
         }
         view_id = _content_id("PRHV", body)
         existing = self.store.get_history_view(view_id)
@@ -225,6 +312,10 @@ class HistoryService:
             event_count=len(events),
             events=events,
             event_term_counts=term_counts,
+            coded_term_counts=coded_counts,
+            uncoded_terms=sorted(uncoded_terms),
+            uncoded_event_count=uncoded_count,
+            uncoded_product_names=sorted(uncoded_products),
             patient_keys=sorted(patient_keys),
             follow_up_task_ids=follow_ups,
             case_statuses=statuses,

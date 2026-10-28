@@ -119,10 +119,36 @@ class OfflineComposer:
         return statements
 
 
+def _render_coding(decision: dict[str, Any]) -> str:
+    """One summary statement for one coding decision. A coded term
+    is presented as coded, with its label; an uncoded term is
+    presented as uncoded — the wording the presentation check in
+    :mod:`pv_cases.coding` grades every summary against."""
+    verbatim = decision["verbatim"]
+    if decision["subject_kind"] == "product":
+        if decision["status"] == "coded":
+            return (
+                f"Product coded: {verbatim} → {decision['product_name']}"
+                f" ({decision['product_code']}, {decision['active_substance']})."
+            )
+        return (
+            f"Product uncoded: {verbatim} — no dictionary entry;"
+            " held for coding review."
+        )
+    if decision["status"] == "coded":
+        return (
+            f"Event coded: {verbatim} → {decision['preferred_term']}"
+            f" ({decision['soc']})."
+        )
+    return f"Event uncoded: {verbatim} — no dictionary term; held for coding review."
+
+
 def _render_fact(fact: dict[str, Any]) -> str | None:
     field, value = fact["field"], fact.get("value")
     if value is None:
         return None
+    if field.startswith("coding.") and isinstance(value, dict):
+        return _render_coding(value)
     if field == "suspect_product_name":
         return f"Suspect product: {value}."
     if field == "source":
@@ -214,21 +240,39 @@ class CaseAssembler:
     summary's history statements cite the view artefact itself —
     the same citation discipline as every other statement."""
 
-    def __init__(self, store, chain: EvidenceChain, model: ModelPort, history=None):
+    def __init__(
+        self, store, chain: EvidenceChain, model: ModelPort, history=None, coding=None
+    ):
         self.store = store
         self.chain = chain
         self.model = model
         self.history = history
+        self.coding = coding
         self.resolver = CitationResolver(chain)
 
     # -- tools (plain functions, Strands shape) ----------------------
     def read_case_facts(self, case_id: str) -> list[dict[str, Any]]:
         facts: list[dict[str, Any]] = []
-        for item in self.store.list_evidence(case_id):
+        items = self.store.list_evidence(case_id)
+        coding_items = [i for i in items if i.kind == "coding"]
+        latest_coding = coding_items[-1] if coding_items else None
+        for item in items:
             if item.kind == "intake_report":
                 fields = _FACT_FIELDS
             elif item.kind == "patient_history":
                 fields = _HISTORY_FIELDS
+            elif item.kind == "coding":
+                if item is not latest_coding:
+                    continue  # only the latest coding capture speaks
+                payload = self.chain.payload_of(item)
+                decisions = payload.get("coding", [])
+                for i in range(len(decisions)):
+                    value = _dig(payload, f"coding.{i}")
+                    if value is not None:
+                        facts.append(
+                            {"item_id": item.item_id, "field": f"coding.{i}", "value": value}
+                        )
+                continue
             else:
                 continue
             payload = self.chain.payload_of(item)
@@ -237,6 +281,36 @@ class CaseAssembler:
                 if value is not None:
                     facts.append({"item_id": item.item_id, "field": field, "value": value})
         return facts
+
+    def _attach_coding(self, case_id: str, today: date) -> None:
+        """Capture the case's current coding decisions on its
+        evidence chain, once per coding state — the same pattern
+        as the patient-history capture. A state already captured
+        is not re-appended; a resolution or recode is a new state
+        and is captured anew at the next assembly."""
+        if self.coding is None:
+            return
+        import hashlib
+        import json
+
+        decisions = self.coding.current_decisions(case_id)
+        if not decisions:
+            return
+        state = hashlib.sha256(
+            json.dumps(
+                [d.decision_id for d in decisions], separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+        item_id = f"EV-{case_id}-CODING-{state}"
+        if any(i.item_id == item_id for i in self.store.list_evidence(case_id)):
+            return
+        self.chain.append(
+            case_id=case_id,
+            kind="coding",
+            payload={"coding": [d.model_dump(mode="json") for d in decisions]},
+            recorded_on=today,
+            item_id=item_id,
+        )
 
     def _attach_history(self, case_id: str, today: date) -> None:
         """Capture the current patient history view on this case's
@@ -276,9 +350,23 @@ class CaseAssembler:
         if case is None:
             raise KeyError(f"no such case: {case_id}")
         self._attach_history(case_id, today)
+        self._attach_coding(case_id, today)
         facts = self.read_case_facts(case_id)
         statements = self.model.propose_summary(facts)
         problems = self.resolver.problems(case_id, statements)
+        if self.coding is not None:
+            # Round 3: the coded-term discipline — a summary that
+            # presents an uncoded term as coded (or misstates a
+            # coded one) is refused in code, on the same wholesale
+            # terms as an unresolvable citation.
+            from pv_cases.coding import coding_presentation_problems
+
+            decisions = self.coding.current_decisions(case_id)
+            if decisions:
+                dictionary = self.coding.dictionary(today=today)
+                problems += coding_presentation_problems(
+                    decisions, statements, dictionary
+                )
         if problems:
             raise CitationRefusal(problems)
         summary = CaseSummary(
