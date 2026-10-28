@@ -37,9 +37,11 @@ architecture page has required since Round 1:
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 from typing import Any, Callable
 
+from pv_cases.evidence import canonical_json
 from pv_cases.models import (
     GATEWAY_DECISION_ALLOW,
     GATEWAY_DECISION_DENY,
@@ -105,6 +107,19 @@ POLICY_PACK = {
 POLICY_PACK_VERSION = POLICY_PACK["version"]
 
 
+def policy_pack_fingerprint(pack: dict | None = None) -> str:
+    """A content fingerprint of the policy pack: sha256 over its
+    canonical JSON (Round 10, RT-15). The recorded
+    ``pack_version`` is the pack's self-declared version; this
+    fingerprint is its content. Editing a rule in place without
+    bumping the version changes the fingerprint, so a recorded
+    call can be checked after the fact against the pack it
+    claims to have been judged under."""
+    return hashlib.sha256(
+        canonical_json(pack if pack is not None else POLICY_PACK)
+    ).hexdigest()
+
+
 class GatewayError(ValueError):
     """A gateway registration problem: a tool the policy pack
     does not name, or a PHI family that disagrees with the pack."""
@@ -155,6 +170,7 @@ def denial_envelope(call: GatewayCall) -> dict:
                 "tool": call.tool,
                 "role": call.role,
                 "pack_version": call.pack_version,
+                "pack_fingerprint": call.pack_fingerprint,
             },
         },
     }
@@ -205,6 +221,7 @@ class GatewayService:
             decision=decision,
             rule_id=rule_id,
             pack_version=POLICY_PACK_VERSION,
+            pack_fingerprint=policy_pack_fingerprint(),
             recorded_on=today,
         )
         self.store.add_gateway_call(call)

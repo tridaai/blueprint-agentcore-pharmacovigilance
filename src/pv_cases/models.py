@@ -1273,4 +1273,12 @@ class GatewayCall(BaseModel):
     decision: str  # GATEWAY_DECISION_*
     rule_id: str
     pack_version: str
+    # Round 10 (RT-15): a content fingerprint of the policy pack
+    # this call was judged under — sha256 over the pack's
+    # canonical JSON. The version string is the pack's
+    # self-declaration; the fingerprint is its content, so an
+    # in-place rule edit without a version bump is detectable
+    # after the fact by recomputing and comparing. Calls
+    # recorded before Round 10 carry the empty string.
+    pack_fingerprint: str = ""
     recorded_on: date
