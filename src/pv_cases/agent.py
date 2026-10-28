@@ -138,7 +138,7 @@ def _render_fact(fact: dict[str, Any]) -> str | None:
         if leaf == "outcome":
             return f"Reported outcome: {value}."
         if leaf == "description":
-            return f"Event description: {value}."
+            return f"Event description: {value}" + ("" if str(value).endswith(".") else ".")
     if field == "reporter.qualification":
         return f"Reporter qualification: {value}."
     if field == "patient.age":
