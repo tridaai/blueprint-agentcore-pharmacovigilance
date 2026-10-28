@@ -417,6 +417,260 @@ def assessment_fixtures() -> list[IntakeReport]:
     ]
 
 
+def followup_fixtures() -> list[IntakeReport]:
+    """Round 5's planted originals: one report per follow-up shape
+    the workflow must handle. Each fixture's expected request is
+    named in its comment; the answering reports are in
+    :func:`followup_reports`."""
+    return [
+        # The day-20 case: a valid, coded report whose event has
+        # neither outcome nor description — death, hospitalisation
+        # and disability all name events.0.outcome, so seriousness
+        # cannot be assessed while expectedness can (Vomiting is
+        # not in Cardivane's label). Expected: ONE assessment
+        # request, item field events.0.outcome blocking the three
+        # criteria, class missing_case_fact (14 days). Its
+        # follow-up (RPT-2026-0402, received day 20 after day zero
+        # 2026-10-05) lands the outcome "fatal": the request
+        # resolves, the assessment supersedes to serious +
+        # unexpected on a 7-day clock whose deadline (2026-10-12)
+        # is already past — breached, stated, day zero unmoved.
+        IntakeReport(
+            report_id="RPT-2026-0401",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 5),
+            patient=Patient(initials="G.H.", age=71, sex="M"),
+            reporter=Reporter(
+                name="Dr Elena Ruiz",
+                qualification="cardiologist",
+                email="eruiz@example-clinic.org",
+                country="ES",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Vomiting",
+                    onset_date=date(2026, 10, 4),
+                )
+            ],
+        ),
+        # The cycle case: an uncoded event term on Dermaclear.
+        # Expected: ONE coding request (uncoded_event, 30 days).
+        # Its first follow-up restates the term in words the
+        # dictionary still does not know (an attempt — the request
+        # rolls to cycle 2 with a new due date); its second
+        # restates it as a recorded synonym and the request
+        # resolves.
+        IntakeReport(
+            report_id="RPT-2026-0411",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 6),
+            patient=Patient(initials="F.D.", age=47, sex="F"),
+            reporter=Reporter(name="Patient self report", email="fd@example.net"),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Rash across both hands",
+                    onset_date=date(2026, 10, 5),
+                    outcome="recovering",
+                    description="Rash spread across both hands after"
+                    " a week of using the cream.",
+                )
+            ],
+        ),
+        # The escalation case: an uncoded event term on Cardivane
+        # whose three follow-ups each restate it in fresh words
+        # the dictionary still does not know. Expected: the third
+        # failed attempt lands at the pack's cycle cap and the
+        # request escalates — a named state, not a dropped task.
+        IntakeReport(
+            report_id="RPT-2026-0421",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 7),
+            patient=Patient(initials="S.A.", age=63, sex="M"),
+            reporter=Reporter(name="Patient self report", email="sa@example.net"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Tingling in the fingers",
+                    onset_date=date(2026, 10, 6),
+                    outcome="recovering",
+                    description="Tingling noted at the review visit.",
+                )
+            ],
+        ),
+        # The validity case: the reference feed's A.B. event
+        # reported by phone with nobody identifiable behind it —
+        # the reporter criterion alone fails. Expected: a validity
+        # request (identifiable_reporter, 14 days) beside the R1
+        # task. Its follow-up names the reporter, the merged
+        # report founds the case, and the case lands as a
+        # suspected duplicate of CASE-RPT-2026-0005 with a dedup
+        # link — flagged, never merged.
+        IntakeReport(
+            report_id="RPT-2026-0431",
+            source=ReportSource.CALL_CENTRE,
+            received_on=date(2026, 10, 8),
+            patient=Patient(initials="A.B.", date_of_birth=date(1988, 3, 14), sex="F"),
+            reporter=Reporter(qualification="call centre note, caller hung up"),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Blistering rash on hands",
+                    onset_date=date(2026, 10, 9),
+                    outcome="recovering",
+                )
+            ],
+        ),
+    ]
+
+
+def followup_reports() -> dict[str, IntakeReport]:
+    """Round 5's planted follow-up reports, keyed by report id.
+    Each restates its case's facts and changes exactly what its
+    comment says — the merge rule (pv_cases.reporting) does the
+    rest."""
+    return {
+        # Answers RPT-2026-0401 on day 20: the outcome lands, and
+        # with it the death criterion. Everything else restated.
+        "RPT-2026-0402": IntakeReport(
+            report_id="RPT-2026-0402",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 25),
+            patient=Patient(initials="G.H.", age=71, sex="M"),
+            reporter=Reporter(
+                name="Dr Elena Ruiz",
+                qualification="cardiologist",
+                email="eruiz@example-clinic.org",
+                country="ES",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Vomiting",
+                    onset_date=date(2026, 10, 4),
+                    outcome="fatal",
+                    description="Patient collapsed at home and died"
+                    " before the ambulance arrived.",
+                )
+            ],
+        ),
+        # First answer to RPT-2026-0411: a restated term the
+        # dictionary still does not know. An attempt, not a fix.
+        "RPT-2026-0412": IntakeReport(
+            report_id="RPT-2026-0412",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 16),
+            patient=Patient(initials="F.D.", age=47, sex="F"),
+            reporter=Reporter(name="Patient self report", email="fd@example.net"),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Rash over hands and wrists",
+                    onset_date=date(2026, 10, 5),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        # Second answer to RPT-2026-0411: the term restated as a
+        # recorded synonym of the dictionary entry — it codes.
+        "RPT-2026-0413": IntakeReport(
+            report_id="RPT-2026-0413",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 28),
+            patient=Patient(initials="F.D.", age=47, sex="F"),
+            reporter=Reporter(name="Patient self report", email="fd@example.net"),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Blistered rash on hands",
+                    onset_date=date(2026, 10, 5),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        # Three answers to RPT-2026-0421, each a fresh wording the
+        # dictionary does not know: attempt, attempt, escalation.
+        "RPT-2026-0422": IntakeReport(
+            report_id="RPT-2026-0422",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 17),
+            patient=Patient(initials="S.A.", age=63, sex="M"),
+            reporter=Reporter(name="Patient self report", email="sa@example.net"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Tingling in fingers and toes",
+                    onset_date=date(2026, 10, 6),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        "RPT-2026-0423": IntakeReport(
+            report_id="RPT-2026-0423",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 27),
+            patient=Patient(initials="S.A.", age=63, sex="M"),
+            reporter=Reporter(name="Patient self report", email="sa@example.net"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Pins and needles in the fingers",
+                    onset_date=date(2026, 10, 6),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        "RPT-2026-0424": IntakeReport(
+            report_id="RPT-2026-0424",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 11, 6),
+            patient=Patient(initials="S.A.", age=63, sex="M"),
+            reporter=Reporter(name="Patient self report", email="sa@example.net"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Numb tingling feeling in hands",
+                    onset_date=date(2026, 10, 6),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        # The answer to RPT-2026-0431: the pharmacist who took the
+        # call identifies themselves; every other fact restated.
+        "RPT-2026-0432": IntakeReport(
+            report_id="RPT-2026-0432",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 15),
+            patient=Patient(initials="A.B.", date_of_birth=date(1988, 3, 14), sex="F"),
+            reporter=Reporter(
+                name="Pharmacist D. Osei",
+                qualification="pharmacist",
+                email="dosei@example-pharmacy.org",
+            ),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Blistering rash on hands",
+                    onset_date=date(2026, 10, 9),
+                    outcome="recovering",
+                )
+            ],
+        ),
+    }
+
+
 def coding_fixtures() -> list[IntakeReport]:
     """Round 3's planted set: one report per coding match path, plus
     the traps the lookup must refuse to guess. Each fixture's

@@ -44,6 +44,13 @@ class IntakeService:
         self.store = store
         self.objects = objects
         self.chain = EvidenceChain(store, objects)
+        # Round 5: the follow-up service, bound by the wiring after
+        # both exist (the follow-up service founds cases through
+        # this intake, so neither can own the other). When bound,
+        # every invalid report also raises a workflow follow-up
+        # request naming the missing fields, and every new case is
+        # scanned for deficiencies a follow-up report can cure.
+        self.followup = None
         # Round 2: when a dedup service is wired, every new case is
         # assessed against the stored book before ingest returns —
         # a duplicate finding is a link + a human queue item, never
@@ -75,6 +82,8 @@ class IntakeService:
             )
             self.objects.put_object(f"follow-ups/{task.task_id}.json", _canonical(payload))
             self.store.add_follow_up(task)
+            if self.followup is not None:
+                self.followup.raise_for_invalid(report, today)
             return IntakeOutcome(report.report_id, None, task)
 
         case_id = _case_id_for(report.report_id)
@@ -106,6 +115,8 @@ class IntakeService:
             self.coding.code_case(case_id, today)
         if self.assessment is not None:
             self.assessment.assess_case(case_id, today)
+        if self.followup is not None:
+            self.followup.raise_for_case(case_id, today)
         return IntakeOutcome(report.report_id, case, None)
 
     def ingest_feed(self, reports: list[IntakeReport], today: date) -> list[IntakeOutcome]:

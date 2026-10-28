@@ -57,3 +57,16 @@ def assessed(coded) -> Services:
     for report in assessment_fixtures():
         coded.intake.ingest(report, DAY)
     return coded
+
+
+@pytest.fixture()
+def followed(assessed) -> Services:
+    """The assessed book plus Round 5's follow-up originals — one
+    report per follow-up shape: an assessment request, a coding
+    request that resolves on its second cycle, a coding request
+    that escalates, and a validity request."""
+    from pv_cases.seed import followup_fixtures
+
+    for report in followup_fixtures():
+        assessed.intake.ingest(report, DAY)
+    return assessed

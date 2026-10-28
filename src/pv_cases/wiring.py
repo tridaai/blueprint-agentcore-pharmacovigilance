@@ -11,6 +11,7 @@ from pv_cases.coding import CodingService
 from pv_cases.config import Settings
 from pv_cases.dedup import DedupService
 from pv_cases.evidence import EvidenceChain
+from pv_cases.followup import FollowUpService
 from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
 from pv_cases.object_store import LocalObjectStore
@@ -42,6 +43,19 @@ class Services:
             coding=self.coding,
             assessment=self.assessment,
         )
+        # Round 5: the follow-up workflow. It founds cases through
+        # intake; intake raises its requests — the wiring binds the
+        # two after both exist.
+        self.followup = FollowUpService(
+            self.store,
+            self.objects,
+            self.chain,
+            intake=self.intake,
+            coding=self.coding,
+            assessment=self.assessment,
+            dedup=self.dedup,
+        )
+        self.intake.followup = self.followup
         self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
         self.assembler = CaseAssembler(
