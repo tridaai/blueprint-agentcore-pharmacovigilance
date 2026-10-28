@@ -32,6 +32,7 @@ from datetime import date
 
 from pv_cases.coding import current_decisions as _current_coding
 from pv_cases.evidence import EvidenceChain
+from pv_cases.reporting import current_report
 from pv_cases.models import (
     SUBJECT_EVENT,
     SUBJECT_PRODUCT,
@@ -62,10 +63,11 @@ class HistoryService:
 
     # -- artefact reads ---------------------------------------------------
     def _report_of(self, case_id: str) -> IntakeReport | None:
-        for item in self.store.list_evidence(case_id):
-            if item.kind == "intake_report":
-                return IntakeReport.model_validate(self.chain.payload_of(item))
-        return None
+        # The report of record, follow-ups folded in (Round 5).
+        try:
+            return current_report(self.store, self.chain, case_id)
+        except KeyError:
+            return None
 
     def _case_reports(self) -> list[tuple[object, IntakeReport]]:
         pairs = []

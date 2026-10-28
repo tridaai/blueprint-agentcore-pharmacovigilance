@@ -2,8 +2,8 @@
 -- Payloads are JSON text, exactly as in the SQLite dialect — one
 -- contract across stores. Both tables are insert-only by design
 -- (the store port grows no update or delete for them): a task
--- never changes in place; what happens to it arrives as an act,
--- and its current state is derived from the acts in code.
+-- never changes in place — what happens to it arrives as an
+-- act, and its current state is derived from the acts in code.
 CREATE TABLE IF NOT EXISTS follow_up_requests (
     task_id TEXT PRIMARY KEY,
     case_id TEXT,

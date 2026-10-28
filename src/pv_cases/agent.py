@@ -450,14 +450,12 @@ class CaseAssembler:
         carries is not re-appended."""
         if self.history is None:
             return
-        from pv_cases.models import IntakeReport, patient_key
+        from pv_cases.models import patient_key
+        from pv_cases.reporting import current_report
 
-        report = None
-        for item in self.store.list_evidence(case_id):
-            if item.kind == "intake_report":
-                report = IntakeReport.model_validate(self.chain.payload_of(item))
-                break
-        if report is None:
+        try:
+            report = current_report(self.store, self.chain, case_id)
+        except KeyError:
             return
         view = self.history.latest_patient_view(patient_key(report.patient))
         if view is None:

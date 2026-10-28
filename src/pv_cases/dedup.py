@@ -28,6 +28,7 @@ from __future__ import annotations
 from datetime import date
 
 from pv_cases.evidence import EvidenceChain
+from pv_cases.reporting import current_report
 from pv_cases.models import (
     Case,
     CaseStatus,
@@ -258,10 +259,9 @@ class DedupService:
 
     # -- inputs ---------------------------------------------------------
     def report_of(self, case: Case) -> IntakeReport:
-        for item in self.store.list_evidence(case.case_id):
-            if item.kind == "intake_report":
-                return IntakeReport.model_validate(self.chain.payload_of(item))
-        raise KeyError(f"case {case.case_id} has no intake evidence")
+        # The report of record: the intake payload folded with the
+        # case's follow-up reports (pv_cases.reporting, Round 5).
+        return current_report(self.store, self.chain, case.case_id)
 
     # -- scanning ---------------------------------------------------------
     def _assessed_pair_ids(self) -> set[tuple[str, str]]:
@@ -289,6 +289,67 @@ class DedupService:
         cases = self.store.list_cases()
         for case in cases:
             created.extend(self.scan_case(case.case_id, today))
+        return created
+
+    def link_report_matches(
+        self, report: IntakeReport, home_case_id: str, today: date
+    ) -> list[DedupLink]:
+        """Round 5: score one follow-up report against every OTHER
+        case in the book, under the same rule pack. A follow-up is
+        new evidence about matching — it may describe the same
+        event another case already holds — so a definite/probable
+        band creates the usual link between the follow-up's own
+        case and the matched case, routed to the same human queue.
+        Nothing is merged and no case is created or closed here;
+        pairs that already carry a link are skipped, and only
+        banded findings are recorded (the assessment ids carry the
+        follow-up report's id, so the artefact says what raised
+        it)."""
+        home = self.store.get_case(home_case_id)
+        if home is None:
+            raise KeyError(f"no such case: {home_case_id}")
+        linked_pairs = {
+            frozenset((l.case_a_id, l.case_b_id))
+            for l in self.store.list_dedup_links()
+        }
+        created: list[DedupLink] = []
+        for other in self.store.list_cases():
+            if other.case_id == home_case_id:
+                continue
+            if frozenset((home_case_id, other.case_id)) in linked_pairs:
+                continue
+            earlier, later = _pair_order(home, other)
+            if earlier.case_id == home_case_id:
+                assessment = assess_pair(
+                    earlier, report, later, self.report_of(later), today
+                )
+            else:
+                assessment = assess_pair(
+                    earlier, self.report_of(earlier), later, report, today
+                )
+            if assessment.band is DedupBand.NOT_DUPLICATE:
+                continue
+            assessment = assessment.model_copy(
+                update={
+                    "assessment_id": (
+                        f"DEDUP-FU-{report.report_id}-{other.case_id}"
+                    )
+                }
+            )
+            self.store.add_dedup_assessment(assessment)
+            link = DedupLink(
+                link_id=f"LINK-{earlier.case_id}-{later.case_id}",
+                assessment_id=assessment.assessment_id,
+                case_a_id=earlier.case_id,
+                case_b_id=later.case_id,
+                band=assessment.band,
+                created_on=today,
+            )
+            self.store.add_dedup_link(link)
+            if later.status is not CaseStatus.CLOSED_AS_DUPLICATE:
+                later.status = CaseStatus.DUPLICATE_LINKED
+                self.store.update_case(later)
+            created.append(link)
         return created
 
     def _assess_and_link(self, x: Case, y: Case, today: date) -> list[DedupLink]:

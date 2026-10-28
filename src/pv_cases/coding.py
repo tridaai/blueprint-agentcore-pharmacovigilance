@@ -36,6 +36,7 @@ from __future__ import annotations
 from datetime import date
 
 from pv_cases.evidence import EvidenceChain
+from pv_cases.reporting import current_report
 from pv_cases.models import (
     SUBJECT_EVENT,
     SUBJECT_PRODUCT,
@@ -334,10 +335,9 @@ class CodingService:
 
     # -- inputs ---------------------------------------------------------
     def report_of(self, case: Case) -> IntakeReport:
-        for item in self.store.list_evidence(case.case_id):
-            if item.kind == "intake_report":
-                return IntakeReport.model_validate(self.chain.payload_of(item))
-        raise KeyError(f"case {case.case_id} has no intake evidence")
+        # The report of record: the intake payload folded with the
+        # case's follow-up reports (pv_cases.reporting, Round 5).
+        return current_report(self.store, self.chain, case.case_id)
 
     # -- the dictionary ---------------------------------------------------
     def ensure_base(self, today: date) -> None:
@@ -376,9 +376,13 @@ class CodingService:
     ) -> list[CodingDecision]:
         """Code every subject of the case under one dictionary
         version. Idempotent per version: a subject already coded
-        under that version is left alone, and a manual (human)
-        decision is never auto-superseded at any version. Returns
-        the decisions written by this run."""
+        under that version — for the verbatim the report of record
+        now carries — is left alone, and a manual (human) decision
+        is never auto-superseded at any version. A follow-up report
+        that changes a subject's verbatim (Round 5) makes the
+        stored decision stale: it is superseded by a fresh lookup
+        of the new wording. Returns the decisions written by this
+        run."""
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
@@ -401,7 +405,11 @@ class CodingService:
             cur = current.get((kind, index))
             if cur is not None and cur.match_path is CodingMatchPath.MANUAL:
                 continue
-            if cur is not None and cur.dictionary_version == dv.version:
+            if (
+                cur is not None
+                and cur.dictionary_version == dv.version
+                and cur.verbatim == verbatim
+            ):
                 continue
             if kind == SUBJECT_EVENT:
                 entry, path, reason, candidates = lookup_event(verbatim, dv.event_entries)

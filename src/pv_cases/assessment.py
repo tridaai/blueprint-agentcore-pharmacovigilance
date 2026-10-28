@@ -51,6 +51,7 @@ from datetime import date, timedelta
 
 from pv_cases.coding import current_decisions as _current_coding
 from pv_cases.evidence import EvidenceChain
+from pv_cases.reporting import current_report
 from pv_cases.models import (
     CRITERION_CONGENITAL,
     CRITERION_DEATH,
@@ -760,10 +761,9 @@ class AssessmentService:
 
     # -- inputs ---------------------------------------------------------
     def report_of(self, case: Case) -> IntakeReport:
-        for item in self.store.list_evidence(case.case_id):
-            if item.kind == "intake_report":
-                return IntakeReport.model_validate(self.chain.payload_of(item))
-        raise KeyError(f"case {case.case_id} has no intake evidence")
+        # The report of record: the intake payload folded with the
+        # case's follow-up reports (pv_cases.reporting, Round 5).
+        return current_report(self.store, self.chain, case.case_id)
 
     # -- the reference safety information -------------------------------
     def ensure_rsi(self, today: date) -> None:
