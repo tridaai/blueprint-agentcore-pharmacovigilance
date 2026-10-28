@@ -482,6 +482,75 @@ programme.
   in the platform's shape. Migration `0008` in both dialects.
   And still: **nothing is ever submitted to a regulator.**
 
+## What Round 9 adds
+
+- **The red team** (`docs/red-team.md`, `tests/test_redteam.py`):
+  a deliberate attack pass over every trust boundary Rounds
+  1–8 built — reporter and follow-up free text, dictionary
+  versions, memory recall, gateway/policy decisions, the
+  seal/export artefacts, the clocks and the dual-control gate.
+  Twenty-seven attacks, each with the defence it should meet
+  and a verdict. Four were **real defects**, fixed in this
+  round and kept as regression tests plus zero-tolerance eval
+  counters:
+  - **Held text decided verdicts (RT-01).** The quarantine
+    held a field out of the assembler's facts — but the
+    assessment engine reads event *descriptions* directly as
+    deciding facts, so a held description carrying "admitted
+    to hospital… resuscitated", plus an instruction, fired two
+    seriousness criteria and judged the case serious. Now a
+    held description is **absent to the assessment** too (the
+    criterion goes `cannot_assess` where that text was the
+    deciding fact), the held set rides in the assessment's
+    input fingerprint, and a release supersedes the assessment
+    — day zero unmoved — before the released text decides as
+    data.
+  - **A follow-up could re-identify its case (RT-23).** The
+    merge lets a follow-up's present fields win, so a report
+    about a *different patient* silently rewrote the case's
+    date of birth and patient id — and the patient key,
+    history and recall followed. A follow-up whose hard
+    identifiers contradict the record's is now **refused
+    before anything lands**, with the field named; completing
+    a missing identity is unaffected.
+  - **A backdated follow-up moved day zero before first
+    receipt (RT-20).** A validity follow-up claiming a receipt
+    date earlier than the original report's founded a case
+    whose clock started before the sponsor had received
+    anything. The founding receipt is now the completion date
+    **bounded below by the original report's receipt**.
+  - **Dual control fell to a name variant (RT-25).** "Dr A.
+    Rao" holding the medical accept, "dr a rao" could record
+    the safety accept — reviewer identity was a raw string.
+    Identity is now compared under the repo's
+    `normalise_text` folding at recording time, in the derived
+    review state, and in the offline verifier's review gate.
+  The rest held — memory poisoning, tombstone serving,
+  denial-envelope confusion, mixed-inventory export forgery,
+  sealing over a standing hold, re-judging a sealed case
+  under a newer dictionary — and are graded as traps. Two
+  findings are documented open in `docs/red-team.md`:
+  quarantine release has no role separation (there is no role
+  registry to check against yet — the access-control work),
+  and pack integrity rests on the packs being code (a per-call
+  content fingerprint is noted for release hardening).
+- **Eval depth**: the gate now grades the boundary values it
+  previously only approached — dedup pairs scoring exactly
+  **54 / 55 / 79 / 80** against the probable/definite bands,
+  the onset gate at **90 vs 91 days**, the event-overlap gate
+  at exactly 0.5; `clock_state` on the deadline day itself
+  (`due_today`), the day before and the day after
+  (`breached`, −1); the 7-day clock taken exactly on a
+  fatal/life-threatening criterion; a **dictionary transition
+  mid-case** (automatic decisions migrate to the new version
+  on recode, a human's manual decision stays pinned to its
+  version, the assessment supersedes); and a follow-up that
+  resolves on its **third cycle** — the cap escalates failed
+  attempts, not late successes. Eight new zero-tolerance
+  counters, all at zero. No migration this round — the fixes
+  are behaviour at existing boundaries, not new artefacts.
+  And still: **nothing is ever submitted to a regulator.**
+
 ## Quick start
 
 ```bash
@@ -499,8 +568,22 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 8 of 20.** Built and gate-green: everything in Rounds
-  1–7, plus the injection quarantine (report text screened in
+- **Round 9 of 20.** Built and gate-green: everything in Rounds
+  1–8, plus the red team (docs/red-team.md): twenty-seven
+  attacks over the earlier rounds' trust boundaries, four real
+  defects found and fixed — held text no longer decides
+  verdicts (a held description is absent to the assessment
+  until released, and the release supersedes it), follow-ups
+  can no longer re-identify a case (contradicting hard
+  identifiers are refused before anything lands), a backdated
+  validity follow-up can no longer found a case before first
+  receipt, and dual control is judged on normalised reviewer
+  identity in the service and the offline verifier alike —
+  with the defences that held (memory poisoning, tombstones,
+  denial envelopes, mixed inventories, dictionary re-judging)
+  kept as regression traps and zero-tolerance eval counters,
+  and the gate deepened at the dedup band, clock and
+  dictionary-transition boundaries. Round 8 shipped: the injection quarantine (report text screened in
   code at intake and follow-up against a versioned pack; held
   fields reach no fact, summary or prompt until a named
   reviewer's release act; sealed holds stay held), the

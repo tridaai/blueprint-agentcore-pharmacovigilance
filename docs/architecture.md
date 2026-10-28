@@ -180,6 +180,23 @@ other blueprints already cover the LangGraph pattern.
     the Cedar artefact in `infra/`; its executable mirror in
     code is graded to carry the same rule ids, roles and
     catalogue.
+15. (R9) A quarantine hold binds every reader of the field,
+    not just the drafter: the assessment engine reads event
+    descriptions as deciding facts, so a held description is
+    treated as absent there too — the criterion it alone would
+    have decided goes `cannot_assess`, the held set is part of
+    the assessment's input fingerprint, and a release
+    supersedes the assessment before the text decides as data.
+    A follow-up amends facts but cannot re-identify its case:
+    a date of birth or reporter-held patient id contradicting
+    the record refuses the submission before anything lands.
+    A founded case's day zero is the date its report became
+    valid, bounded below by the original report's receipt.
+    Reviewer identity — for dual control at recording, in the
+    derived review state, and in the offline verifier — is
+    compared under `normalise_text` folding, so a name variant
+    is the same person. The full attack list, verdicts and the
+    two open findings live in `docs/red-team.md`.
 
 ## Round map
 
