@@ -768,6 +768,17 @@ class AssessmentService:
         # Round 7: the sealing guard, bound by wiring — while it
         # is set, a sealed case refuses new assessments.
         self.seal_lookup = None
+        # Round 9 (red team RT-01): the injection quarantine,
+        # bound by wiring. The criteria pack reads event
+        # *descriptions* as deciding facts — the one road from
+        # reporter prose to a verdict — so a description under a
+        # quarantine hold is treated as absent here, exactly as
+        # the assembler excludes it from its facts, until a named
+        # reviewer releases it. The held set is part of the input
+        # fingerprint, so a release (or a new hold) supersedes
+        # the assessment rather than leaving a verdict computed
+        # from text nobody may read.
+        self.quarantine = None
 
     # -- inputs ---------------------------------------------------------
     def report_of(self, case: Case) -> IntakeReport:
@@ -817,6 +828,38 @@ class AssessmentService:
         self.ensure_rsi(today)
         rsi = self.rsi()
         report = self.report_of(case)
+        held_description_events: list[int] = []
+        if self.quarantine is not None:
+            from pv_cases.reporting import description_sources
+
+            held = self.quarantine.held_fields(case_id)
+            held_description_events = sorted(
+                index
+                for index, item_id in description_sources(
+                    self.store, self.chain, case_id
+                ).items()
+                if (item_id, f"events.{index}.description") in held
+            )
+            if held_description_events:
+                # A held description is absent as a deciding
+                # fact: criteria it alone would have fired go
+                # cannot_assess (the fact is named — it is the
+                # held field), never fired and never assumed
+                # negative.
+                report = report.model_copy(
+                    update={
+                        "events": [
+                            (
+                                event.model_copy(
+                                    update={"description": None}
+                                )
+                                if i in held_description_events
+                                else event
+                            )
+                            for i, event in enumerate(report.events)
+                        ]
+                    }
+                )
         decisions = _current_coding(self.store.list_coding_decisions(case_id))
         material = {
             "case_id": case_id,
@@ -825,6 +868,7 @@ class AssessmentService:
             "criteria_pack_version": CRITERIA_PACK_VERSION,
             "rsi_version": rsi.version,
             "clock_pack_version": CLOCK_PACK_VERSION,
+            "held_description_events": held_description_events,
         }
         fingerprint = hashlib.sha256(
             json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")

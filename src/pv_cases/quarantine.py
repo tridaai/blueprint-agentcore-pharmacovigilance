@@ -33,8 +33,12 @@ returns blueprint, adapted to this repo's artefacts:
   While a field is held it is excluded from the assembler's
   facts, which is the only road from source text to a summary
   statement or a model prompt. The case otherwise proceeds: the
-  gate, coding, assessment and clocks never read these fields,
-  and the hold never blocks them.
+  gate and coding never read these fields. The assessment engine
+  *does* read one of them — event descriptions are deciding
+  facts for several seriousness criteria — so since Round 9
+  (red-team RT-01) a held description is treated as absent by
+  the assessment too, and the clocks that follow from it: a
+  verdict is never computed from text under a hold.
 - **Release is a named reviewer's act, and only that.** A hold
   ends when a named reviewer records a release act with their
   rationale. The released field is usable again *as data* — the

@@ -122,3 +122,42 @@ def current_report(store, chain, case_id: str) -> IntakeReport:
     if report is None:
         raise KeyError(f"case {case_id} has no intake evidence")
     return report
+
+
+def description_sources(store, chain, case_id: str) -> dict[int, str]:
+    """Which evidence item supplied each event's description in
+    the report of record: event index -> evidence item id.
+
+    The fold of :func:`current_report`, tracked for the one field
+    a second discipline needs provenance for. The merge rule is
+    the same — a follow-up's description wins when *present*, an
+    absent one keeps the earlier value, events beyond the
+    record's count are appended by the report that carries them —
+    so the item named here is the item whose text the folded
+    report actually carries. The quarantine hold is keyed by
+    (item, field); this is how a consumer of the folded report
+    (the assessment engine) knows whether the description in
+    front of it is held. Events whose folded description is
+    absent are not in the map."""
+    sources: dict[int, str] = {}
+    seen_intake = False
+    count = 0
+    for item in store.list_evidence(case_id):
+        if item.kind == "intake_report" and not seen_intake:
+            seen_intake = True
+            report = IntakeReport.model_validate(chain.payload_of(item))
+            for i, event in enumerate(report.events):
+                if event.description is not None:
+                    sources[i] = item.item_id
+            count = len(report.events)
+        elif item.kind == "follow_up_report" and seen_intake:
+            follow_up = IntakeReport.model_validate(chain.payload_of(item))
+            for i, event in enumerate(follow_up.events):
+                if i < count:
+                    if _present(event.description):
+                        sources[i] = item.item_id
+                else:
+                    if event.description is not None:
+                        sources[i] = item.item_id
+                    count = i + 1
+    return sources

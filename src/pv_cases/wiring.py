@@ -121,6 +121,11 @@ class Services:
         self.memory.seal_lookup = self.sealing.get_seal
         self.quarantine.seal_lookup = self.sealing.get_seal
         self.assembler.quarantine = self.quarantine
+        # Round 9 (RT-01): the assessment engine reads event
+        # descriptions as deciding facts, so it takes the same
+        # quarantine the assembler takes — a held description is
+        # absent to the verdicts until released.
+        self.assessment.quarantine = self.quarantine
         self.gateway = GatewayService(self.store)
         self.gateway.register_tool(
             TOOL_CASE_RECORD,
