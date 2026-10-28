@@ -350,6 +350,12 @@ class PatientHistoryView(BaseModel):
     event_count: int = 0
     events: list[HistoryEvent] = Field(default_factory=list)
     event_term_counts: dict[str, int] = Field(default_factory=dict)
+    # Round 3: dictionary coding of this view's events — preferred
+    # terms counted where coded, uncoded verbatims counted
+    # separately and named, never folded into a coded count.
+    coded_term_counts: dict[str, int] = Field(default_factory=dict)
+    uncoded_terms: list[str] = Field(default_factory=list)
+    uncoded_event_count: int = 0
     product_codes: list[str] = Field(default_factory=list)
     identity_facts: list[IdentityFact] = Field(default_factory=list)
     identity_conflicts: dict[str, list[str]] = Field(default_factory=dict)
@@ -371,3 +377,139 @@ class ProductHistoryView(BaseModel):
     patient_keys: list[str] = Field(default_factory=list)
     follow_up_task_ids: list[str] = Field(default_factory=list)
     case_statuses: dict[str, str] = Field(default_factory=dict)
+    # Round 3: the dictionary coding of this view's events and of
+    # the product itself — preferred terms counted where coded,
+    # uncoded verbatims counted separately and named, never folded
+    # into a coded count.
+    coded_term_counts: dict[str, int] = Field(default_factory=dict)
+    uncoded_terms: list[str] = Field(default_factory=list)
+    uncoded_event_count: int = 0
+    uncoded_product_names: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------
+# Round 3: dictionary coding.
+#
+# Coding is a deterministic lookup against a versioned terminology
+# EXTRACT built for this repo — original data, not licensed MedDRA.
+# A *dictionary version* is an immutable artefact: additions take
+# effect only as a new version, never as an edit. A *coding
+# decision* pins (case, subject, dictionary version, verbatim as
+# reported) and records the match path taken. An uncoded decision is
+# a first-class outcome with a named reason and a review task — it
+# is never a guess at a nearby term.
+# ---------------------------------------------------------------------
+
+# Subject kinds a coding decision can be about.
+SUBJECT_EVENT = "event"
+SUBJECT_PRODUCT = "product"
+
+# Uncoded reasons (CodingDecision.uncoded_reason).
+UNCODED_NO_ENTRY = "no_dictionary_entry"
+UNCODED_AMBIGUOUS = "ambiguous_match"
+
+
+class CodingMatchPath(str, Enum):
+    EXACT = "exact"  # verbatim as reported == dictionary verbatim
+    NORMALISED = "normalised"  # equal after case/punctuation folding
+    SYNONYM = "synonym"  # matches a recorded synonym of the entry
+    MANUAL = "manual"  # resolved by a named human coder's act
+    NONE = "none"  # uncoded — no path taken
+
+
+class CodingStatus(str, Enum):
+    CODED = "coded"
+    UNCODED = "uncoded"
+
+
+class DictionaryEntry(BaseModel):
+    """One event entry of the extract: a reporter verbatim, the
+    preferred term it codes to, its system organ class, and the
+    other reporter wordings recorded as synonyms of the verbatim."""
+
+    verbatim: str
+    preferred_term: str
+    soc: str
+    synonyms: list[str] = Field(default_factory=list)
+
+
+class ProductDictionaryEntry(BaseModel):
+    """One product entry of the extract: a product name as reported,
+    and the coded product (code, name, active substance) it maps to."""
+
+    verbatim_name: str
+    product_code: str
+    product_name: str
+    active_substance: str
+    synonyms: list[str] = Field(default_factory=list)
+
+
+class DictionaryVersion(BaseModel):
+    """One immutable version of the terminology extract. The store
+    port has no update or delete for these — a change is a new
+    version that supersedes the old one, which stays readable."""
+
+    version: str
+    created_on: date
+    created_by: str
+    note: str = ""
+    supersedes_version: str | None = None
+    event_entries: list[DictionaryEntry] = Field(default_factory=list)
+    product_entries: list[ProductDictionaryEntry] = Field(default_factory=list)
+
+
+class CodingDecision(BaseModel):
+    """The coding of one subject (one event, or the suspect product)
+    of one case. Immutable once stored; a later coding of the same
+    subject is a new decision linked by ``supersedes_id``, and the
+    *current* decision for a subject is the one nothing supersedes."""
+
+    decision_id: str
+    case_id: str
+    subject_kind: str  # SUBJECT_EVENT | SUBJECT_PRODUCT
+    subject_index: int  # the event's index in the report; 0 for the product
+    verbatim: str  # as reported — preserved exactly, coded or not
+    status: CodingStatus
+    match_path: CodingMatchPath
+    dictionary_version: str
+    # Coded event fields.
+    preferred_term: str | None = None
+    soc: str | None = None
+    # Coded product fields.
+    product_code: str | None = None
+    product_name: str | None = None
+    active_substance: str | None = None
+    # Uncoded fields: why, and (for an ambiguous match) the labels
+    # the verbatim genuinely maps to — the coder's choice is from
+    # these, recorded, never silent.
+    uncoded_reason: str | None = None
+    candidates: list[str] = Field(default_factory=list)
+    coded_by: str | None = None  # the named coder, for MANUAL decisions
+    supersedes_id: str | None = None
+    coded_on: date
+
+
+class CodingReviewStatus(str, Enum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+    SUPERSEDED = "superseded"  # a recode replaced the uncoded decision
+
+
+class CodingReviewTask(BaseModel):
+    """The coding-review queue item an uncoded decision raises. A
+    task closes by a named coder's resolution act, or as superseded
+    when a recode under a newer dictionary replaces the decision."""
+
+    task_id: str
+    case_id: str
+    decision_id: str  # the uncoded decision awaiting resolution
+    subject_kind: str
+    subject_index: int
+    verbatim: str
+    reason: str  # UNCODED_NO_ENTRY | UNCODED_AMBIGUOUS
+    candidates: list[str] = Field(default_factory=list)
+    status: CodingReviewStatus = CodingReviewStatus.OPEN
+    created_on: date
+    resolved_by: str | None = None
+    resolved_on: date | None = None
+    resolution_decision_id: str | None = None

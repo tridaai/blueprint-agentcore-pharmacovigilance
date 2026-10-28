@@ -19,8 +19,11 @@ from pv_cases.migrations import apply_migrations
 from pv_cases.models import (
     Case,
     CaseSummary,
+    CodingDecision,
+    CodingReviewTask,
     DedupAssessment,
     DedupLink,
+    DictionaryVersion,
     EvidenceItem,
     FollowUpTask,
     PatientHistoryView,
@@ -51,6 +54,19 @@ class CaseStore(Protocol):
     def add_history_view(self, kind: str, subject: str, view) -> None: ...
     def get_history_view(self, view_id: str): ...
     def list_history_views(self, kind: str, subject: str) -> list: ...
+    # Round 3: dictionary coding. Dictionary versions and coding
+    # decisions are insert-only — there is deliberately no update
+    # or delete here, so a stored version or decision can never be
+    # edited in place; change arrives as a new artefact.
+    def add_dictionary_version(self, version: DictionaryVersion) -> None: ...
+    def get_dictionary_version(self, version: str) -> DictionaryVersion | None: ...
+    def list_dictionary_versions(self) -> list[DictionaryVersion]: ...
+    def add_coding_decision(self, decision: CodingDecision) -> None: ...
+    def list_coding_decisions(self, case_id: str | None = None) -> list[CodingDecision]: ...
+    def add_coding_task(self, task: CodingReviewTask) -> None: ...
+    def get_coding_task(self, task_id: str) -> CodingReviewTask | None: ...
+    def list_coding_tasks(self, status: str | None = None) -> list[CodingReviewTask]: ...
+    def update_coding_task(self, task: CodingReviewTask) -> None: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -370,6 +386,96 @@ class SqlCaseStore:
         cls = PatientHistoryView if kind == "patient" else ProductHistoryView
         return [cls.model_validate_json(r[0]) for r in rows]
 
+    # -- dictionary coding (Round 3) --------------------------------
+    def add_dictionary_version(self, version: DictionaryVersion) -> None:
+        self._run(
+            "INSERT INTO dictionary_versions (version, created_on, payload)"
+            " VALUES (?,?,?)",
+            (version.version, version.created_on.isoformat(), version.model_dump_json()),
+        )
+
+    def get_dictionary_version(self, version: str) -> DictionaryVersion | None:
+        row = self._run(
+            "SELECT payload FROM dictionary_versions WHERE version = ?",
+            (version,),
+            fetch="one",
+        )
+        return DictionaryVersion.model_validate_json(row[0]) if row else None
+
+    def list_dictionary_versions(self) -> list[DictionaryVersion]:
+        rows = self._run(
+            "SELECT payload FROM dictionary_versions ORDER BY version",
+            fetch="all",
+        )
+        return [DictionaryVersion.model_validate_json(r[0]) for r in rows]
+
+    def add_coding_decision(self, decision: CodingDecision) -> None:
+        self._run(
+            "INSERT INTO coding_decisions (decision_id, case_id, subject_kind,"
+            " subject_index, status, dictionary_version, payload)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (
+                decision.decision_id,
+                decision.case_id,
+                decision.subject_kind,
+                decision.subject_index,
+                decision.status.value,
+                decision.dictionary_version,
+                decision.model_dump_json(),
+            ),
+        )
+
+    def list_coding_decisions(self, case_id: str | None = None) -> list[CodingDecision]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM coding_decisions ORDER BY decision_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM coding_decisions WHERE case_id = ?"
+                " ORDER BY decision_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [CodingDecision.model_validate_json(r[0]) for r in rows]
+
+    def add_coding_task(self, task: CodingReviewTask) -> None:
+        self._run(
+            "INSERT INTO coding_review_tasks (task_id, case_id, status, payload)"
+            " VALUES (?,?,?,?)",
+            (task.task_id, task.case_id, task.status.value, task.model_dump_json()),
+        )
+
+    def get_coding_task(self, task_id: str) -> CodingReviewTask | None:
+        row = self._run(
+            "SELECT payload FROM coding_review_tasks WHERE task_id = ?",
+            (task_id,),
+            fetch="one",
+        )
+        return CodingReviewTask.model_validate_json(row[0]) if row else None
+
+    def list_coding_tasks(self, status: str | None = None) -> list[CodingReviewTask]:
+        if status is None:
+            rows = self._run(
+                "SELECT payload FROM coding_review_tasks ORDER BY task_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM coding_review_tasks WHERE status = ?"
+                " ORDER BY task_id",
+                (status,),
+                fetch="all",
+            )
+        return [CodingReviewTask.model_validate_json(r[0]) for r in rows]
+
+    def update_coding_task(self, task: CodingReviewTask) -> None:
+        self._run(
+            "UPDATE coding_review_tasks SET status = ?, payload = ? WHERE task_id = ?",
+            (task.status.value, task.model_dump_json(), task.task_id),
+        )
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -382,6 +488,9 @@ class InMemoryCaseStore:
         self.dedup_assessments: dict[str, DedupAssessment] = {}
         self.dedup_links: dict[str, DedupLink] = {}
         self.history_views: dict[str, object] = {}
+        self.dictionary_versions: dict[str, DictionaryVersion] = {}
+        self.coding_decisions: dict[str, CodingDecision] = {}
+        self.coding_tasks: dict[str, CodingReviewTask] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -459,3 +568,36 @@ class InMemoryCaseStore:
                 if view.product_code == subject:
                     views.append(view)
         return sorted(views, key=lambda v: v.view_id)
+
+    def add_dictionary_version(self, version: DictionaryVersion) -> None:
+        self.dictionary_versions[version.version] = version
+
+    def get_dictionary_version(self, version: str) -> DictionaryVersion | None:
+        return self.dictionary_versions.get(version)
+
+    def list_dictionary_versions(self) -> list[DictionaryVersion]:
+        return [self.dictionary_versions[k] for k in sorted(self.dictionary_versions)]
+
+    def add_coding_decision(self, decision: CodingDecision) -> None:
+        self.coding_decisions[decision.decision_id] = decision
+
+    def list_coding_decisions(self, case_id: str | None = None) -> list[CodingDecision]:
+        decisions = [self.coding_decisions[k] for k in sorted(self.coding_decisions)]
+        if case_id is not None:
+            decisions = [d for d in decisions if d.case_id == case_id]
+        return decisions
+
+    def add_coding_task(self, task: CodingReviewTask) -> None:
+        self.coding_tasks[task.task_id] = task
+
+    def get_coding_task(self, task_id: str) -> CodingReviewTask | None:
+        return self.coding_tasks.get(task_id)
+
+    def list_coding_tasks(self, status: str | None = None) -> list[CodingReviewTask]:
+        tasks = [self.coding_tasks[k] for k in sorted(self.coding_tasks)]
+        if status is not None:
+            tasks = [t for t in tasks if t.status.value == status]
+        return tasks
+
+    def update_coding_task(self, task: CodingReviewTask) -> None:
+        self.coding_tasks[task.task_id] = task
