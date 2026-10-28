@@ -31,6 +31,9 @@ from pv_cases.models import (
     ProductDictionaryEntry,
     is_named_human,
 )
+from pv_cases.gateway import POLICY_PACK
+from pv_cases.memory import MEMORY_PACK, MemoryError
+from pv_cases.quarantine import QUARANTINE_PACK, QuarantineError
 from pv_cases.review import REVIEW_PACK, ReviewError
 from pv_cases.runtime_app import handle_invocation
 from pv_cases.sealing import SEALING_PACK, SealError
@@ -678,3 +681,170 @@ def propose_dictionary_addition(req: AdditionRequest) -> dict:
     except ValueError as exc:  # entry payload failed validation
         raise HTTPException(400, str(exc))
     return version.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------
+# Round 8: injection quarantine, Memory port, Gateway + Policy.
+# ---------------------------------------------------------------------
+
+
+@app.get("/quarantine/pack")
+def quarantine_pack() -> dict:
+    """The versioned screening pack: the fields screened, the
+    rules that hold a field, and the release rule."""
+    return QUARANTINE_PACK
+
+
+@app.get("/cases/{case_id}/quarantine")
+def case_quarantine(case_id: str) -> list[dict]:
+    """The case's screened fields: every record with its
+    findings, and whether a named release stands over it."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [
+        v.model_dump(mode="json") for v in svc().quarantine.views_for_case(case_id)
+    ]
+
+
+class ReleaseRequest(BaseModel):
+    released_by: str
+    rationale: str = ""
+
+
+@app.post("/quarantine/{record_id}/release")
+def release_quarantine(record_id: str, req: ReleaseRequest) -> dict:
+    """A named reviewer's release of one held field. The refusal
+    names its blocker: an unnamed reviewer, a missing rationale,
+    an already-released record, or a sealed case."""
+    if not is_named_human(req.released_by):
+        raise HTTPException(400, "a quarantine release needs a named reviewer")
+    try:
+        act = svc().quarantine.release(
+            record_id, req.released_by, req.rationale, date.today()
+        )
+    except KeyError:
+        raise HTTPException(404, f"no such quarantine record: {record_id}")
+    except QuarantineError as exc:
+        raise HTTPException(409, str(exc))
+    return act.model_dump(mode="json")
+
+
+@app.get("/memory/pack")
+def memory_pack() -> dict:
+    """The versioned memory pack: the recall strategies, the
+    retention rule and the minimisation rule."""
+    return MEMORY_PACK
+
+
+class RecallRequest(BaseModel):
+    strategy: str
+    requested_by: str
+
+
+@app.post("/cases/{case_id}/memory/recall")
+def recall_for_case(case_id: str, req: RecallRequest) -> dict:
+    """One cross-case recall for a case, recorded through the
+    Memory port: the matches by reference, the pack version and
+    the retention date. A sealed case refuses — its file is
+    closed, recall record included."""
+    if not is_named_human(req.requested_by):
+        raise HTTPException(400, "a memory recall needs a named requester")
+    try:
+        retrieval = svc().memory.recall_for_case(
+            case_id, req.strategy, req.requested_by, date.today()
+        )
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+    except MemoryError as exc:
+        raise HTTPException(409, str(exc))
+    return retrieval.model_dump(mode="json")
+
+
+@app.get("/cases/{case_id}/memory/retrievals")
+def case_retrievals(case_id: str) -> list[dict]:
+    """The case's retrievals still served today: expired ones
+    stand as tombstones and are not listed here (the retention
+    view counts them)."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [
+        r.model_dump(mode="json")
+        for r in svc().memory.active_retrievals(date.today(), case_id)
+    ]
+
+
+@app.get("/memory/retention")
+def memory_retention() -> dict:
+    """The retention position: retrievals active, and retrievals
+    expired as tombstones — kept, counted, never served."""
+    return svc().memory.retention_view(date.today())
+
+
+class PrecedentRequest(BaseModel):
+    verbatim: str
+    requested_by: str
+
+
+@app.post("/memory/coding-precedents")
+def coding_precedents(req: PrecedentRequest) -> dict:
+    """A desk recall: every stored coding decision on one
+    verbatim term across the book, by reference."""
+    if not is_named_human(req.requested_by):
+        raise HTTPException(400, "a memory recall needs a named requester")
+    try:
+        retrieval = svc().memory.recall_coding_precedents(
+            req.verbatim, req.requested_by, date.today()
+        )
+    except MemoryError as exc:
+        raise HTTPException(409, str(exc))
+    return retrieval.model_dump(mode="json")
+
+
+@app.get("/gateway/pack")
+def gateway_pack() -> dict:
+    """The versioned policy pack: roles, the tool catalogue with
+    its PHI families, the permit lists and the rule order."""
+    return POLICY_PACK
+
+
+@app.get("/gateway/tools")
+def gateway_tools() -> list[str]:
+    """The tools the gateway fronts — exactly the pack's
+    catalogue, registered at wiring time."""
+    return svc().gateway.tools()
+
+
+class GatewayInvokeRequest(BaseModel):
+    principal: str
+    role: str
+    tool: str
+    case_id: str | None = None
+    args: dict = {}
+
+
+@app.post("/gateway/invoke")
+def gateway_invoke(req: GatewayInvokeRequest) -> dict:
+    """One tool call through the gateway. The answer is the
+    JSON-RPC envelope either way: a result on an allow, and on a
+    denial the platform's shape — HTTP 200 in spirit, error code
+    -32002 in the body. A denial is never raised as an HTTP
+    error here, because that is not what the platform does."""
+    args = dict(req.args)
+    if (
+        "case_id" not in args
+        and req.case_id is not None
+        and req.tool in ("case_record", "patient_history")
+    ):
+        args["case_id"] = req.case_id
+    return svc().gateway.invoke(
+        req.principal, req.role, req.tool, date.today(),
+        case_id=req.case_id, **args,
+    )
+
+
+@app.get("/gateway/calls")
+def gateway_calls() -> list[dict]:
+    """Every recorded gateway call, allow and deny alike: the
+    record is how a denial (a bland 200 on the wire) is
+    surfaced."""
+    return [c.model_dump(mode="json") for c in svc().gateway.calls()]

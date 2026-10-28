@@ -210,6 +210,15 @@ class GatewayService:
         self.store.add_gateway_call(call)
         if decision == GATEWAY_DECISION_DENY:
             return denial_envelope(call)
+        # A case-scoped tool receives the call's case as its
+        # argument unless the caller passed one explicitly.
+        if (
+            case_id is not None
+            and "case_id" not in args
+            and call.phi_family
+            in (GATEWAY_PHI_CASE_RECORD, GATEWAY_PHI_PATIENT_HISTORY)
+        ):
+            args["case_id"] = case_id
         result = self._tools[tool](**args)
         return {"jsonrpc": "2.0", "id": call.call_id, "result": result}
 

@@ -2,8 +2,11 @@
 reject|history-*|coding*|resolve-coding|dictionary*|assess|
 assessment|clocks|rsi|follow-up*|submit-follow-up|review|
 review-case|review-queue|review-pack|seal|seal-case|
-export-case|verify-export|sealing-pack`` against the
-configured store."""
+export-case|verify-export|sealing-pack|quarantine|
+release-quarantine|quarantine-pack|memory-recall|
+memory-retrievals|memory-retention|memory-precedents|
+memory-pack|gateway-invoke|gateway-calls|gateway-pack``
+against the configured store."""
 
 from __future__ import annotations
 
@@ -36,7 +39,14 @@ USAGE = (
     "review-case <case_id>|review-queue [as-of]|review-pack|"
     "seal <case_id> <sealed_by...>|seal-case <case_id>|"
     "export-case <case_id> <exported_by...>|"
-    "verify-export <package.json>|sealing-pack"
+    "verify-export <package.json>|sealing-pack|"
+    "quarantine <case_id>|"
+    "release-quarantine <record_id> <released_by> <rationale...>|"
+    "quarantine-pack|memory-recall <case_id> <strategy> <requested_by>|"
+    "memory-retrievals <case_id>|memory-retention|"
+    "memory-precedents <requested_by> <verbatim...>|memory-pack|"
+    "gateway-invoke <principal> <role> <tool> <args...>|"
+    "gateway-calls|gateway-pack"
 )
 
 
@@ -415,6 +425,165 @@ def main(argv: list[str] | None = None) -> int:
             f"sealing pack {SEALING_PACK['version']}: package format"
             f" {SEALING_PACK['package_format']} —"
             f" {SEALING_PACK['gate_rule']}"
+        )
+        return 0
+    if cmd == "quarantine" and len(argv) == 2:
+        # Round 8: the case's screened fields — held or released,
+        # with the findings that hold each one.
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        views = svc.quarantine.views_for_case(argv[1])
+        if not views:
+            print(f"{argv[1]}: no screened fields")
+        for view in views:
+            rules = ", ".join(f.rule_id for f in view.record.findings)
+            state = (
+                f"released by {view.released_by}"
+                if view.released
+                else "HELD"
+            )
+            print(
+                f"{view.record.record_id}: {view.record.field}"
+                f" [{rules}] — {state}"
+            )
+        return 0
+    if cmd == "release-quarantine" and len(argv) >= 4:
+        from pv_cases.quarantine import QuarantineError
+
+        try:
+            act = svc.quarantine.release(
+                argv[1], argv[2], " ".join(argv[3:]), today
+            )
+        except KeyError:
+            print(f"no such quarantine record: {argv[1]}")
+            return 1
+        except QuarantineError as exc:
+            print(f"release refused: {exc}")
+            return 1
+        print(
+            f"{act.act_id}: record {act.record_id} released by"
+            f" {act.released_by}"
+        )
+        return 0
+    if cmd == "quarantine-pack":
+        from pv_cases.quarantine import QUARANTINE_PACK
+
+        rules = ", ".join(r["rule_id"] for r in QUARANTINE_PACK["rules"])
+        print(
+            f"quarantine pack {QUARANTINE_PACK['version']}:"
+            f" fields {', '.join(QUARANTINE_PACK['fields'])};"
+            f" rules {rules}"
+        )
+        return 0
+    if cmd == "memory-recall" and len(argv) == 4:
+        from pv_cases.memory import MemoryError
+
+        try:
+            retrieval = svc.memory.recall_for_case(
+                argv[1], argv[2], argv[3], today
+            )
+        except KeyError:
+            print(f"no such case: {argv[1]}")
+            return 1
+        except MemoryError as exc:
+            print(f"recall refused: {exc}")
+            return 1
+        print(
+            f"{retrieval.retrieval_id}: {retrieval.strategy} recall"
+            f" for {retrieval.case_id} — {len(retrieval.matches)}"
+            f" match(es), expires {retrieval.expires_on}"
+        )
+        for match in retrieval.matches:
+            term = f" [{match.coded_term}]" if match.coded_term else ""
+            print(f"  {match.case_id} ({match.basis}){term}")
+        return 0
+    if cmd == "memory-retrievals" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        retrievals = svc.memory.active_retrievals(today, argv[1])
+        if not retrievals:
+            print(f"{argv[1]}: no active retrievals")
+        for r in retrievals:
+            print(
+                f"{r.retrieval_id}: {r.strategy} by {r.requested_by}"
+                f" — {len(r.matches)} match(es), expires {r.expires_on}"
+            )
+        return 0
+    if cmd == "memory-retention":
+        view = svc.memory.retention_view(today)
+        print(
+            f"memory retention at {view['as_of']}: {view['active']}"
+            f" active, {view['expired_tombstones']} expired"
+            f" tombstone(s) (pack {view['pack_version']},"
+            f" {view['retention_days']} days)"
+        )
+        return 0
+    if cmd == "memory-precedents" and len(argv) >= 3:
+        from pv_cases.memory import MemoryError
+
+        try:
+            retrieval = svc.memory.recall_coding_precedents(
+                " ".join(argv[2:]), argv[1], today
+            )
+        except MemoryError as exc:
+            print(f"recall refused: {exc}")
+            return 1
+        print(
+            f"{retrieval.retrieval_id}: coding precedent recall —"
+            f" {len(retrieval.matches)} case(s) decided this term"
+        )
+        for match in retrieval.matches:
+            print(f"  {match.case_id}: {match.coded_term}")
+        return 0
+    if cmd == "memory-pack":
+        from pv_cases.memory import MEMORY_PACK
+
+        print(
+            f"memory pack {MEMORY_PACK['version']}: strategies"
+            f" {', '.join(MEMORY_PACK['strategies'])};"
+            f" retention {MEMORY_PACK['retention_days']} days"
+        )
+        return 0
+    if cmd == "gateway-invoke" and len(argv) >= 4:
+        # Round 8: one call through the gateway. The envelope is
+        # printed either way — on a denial it carries the -32002
+        # error, which is the platform's shape, not a CLI failure.
+        principal, role, tool = argv[1], argv[2], argv[3]
+        rest = argv[4:]
+        if tool == "dictionary_lookup":
+            envelope = svc.gateway.invoke(
+                principal, role, tool, today, verbatim=" ".join(rest)
+            )
+        else:
+            case_id = rest[0] if rest else None
+            envelope = svc.gateway.invoke(
+                principal, role, tool, today, case_id=case_id
+            )
+        print(json.dumps(envelope, indent=2))
+        return 0
+    if cmd == "gateway-calls":
+        calls = svc.gateway.calls()
+        if not calls:
+            print("gateway calls: none recorded")
+        for call in calls:
+            print(
+                f"{call.call_id}: {call.tool} by {call.principal}"
+                f" [{call.role}] — {call.decision} ({call.rule_id})"
+            )
+        return 0
+    if cmd == "gateway-pack":
+        from pv_cases.gateway import POLICY_PACK
+
+        tools = ", ".join(
+            f"{t} ({phi})" for t, phi in POLICY_PACK["tools"].items()
+        )
+        print(
+            f"policy pack {POLICY_PACK['version']}: roles"
+            f" {', '.join(POLICY_PACK['roles'])}; tools {tools};"
+            f" {POLICY_PACK['evaluation']}; denials are"
+            f" {POLICY_PACK['denial_shape']}"
         )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
