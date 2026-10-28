@@ -320,6 +320,66 @@ def dictionary_version(version: str) -> dict:
         raise HTTPException(404, f"no such dictionary version: {version}")
 
 
+# ---------------------------------------------------------------------
+# Round 4: seriousness, expectedness, regulatory clocks.
+# ---------------------------------------------------------------------
+
+
+@app.get("/cases/{case_id}/assessment")
+def case_assessment(case_id: str) -> dict:
+    """The case's current assessment artefact (seriousness,
+    expectedness, clock) — the one nothing supersedes."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    current = svc().assessment.current_assessment(case_id)
+    if current is None:
+        raise HTTPException(404, f"case {case_id} has no assessment yet")
+    return current.model_dump(mode="json")
+
+
+@app.get("/cases/{case_id}/assessments")
+def case_assessments(case_id: str) -> list[dict]:
+    """Every assessment artefact for the case, including
+    superseded ones — the full verdict trail."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [a.model_dump(mode="json") for a in svc().assessment.list_assessments(case_id)]
+
+
+@app.post("/cases/{case_id}/assess")
+def assess_case(case_id: str) -> dict:
+    """(Re)assess the case from its current coded facts. Over
+    unchanged inputs this returns the stored artefact; over
+    changed inputs it writes a superseding one."""
+    try:
+        return svc().assessment.assess_case(case_id, date.today()).model_dump(mode="json")
+    except KeyError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.get("/clocks")
+def clock_board(as_of: date | None = None) -> list[dict]:
+    """The clock board: every assessed case's obligation read at
+    ``as_of`` (default today), deadline-bearing clocks first."""
+    return [
+        e.model_dump(mode="json")
+        for e in svc().assessment.clock_board(as_of or date.today())
+    ]
+
+
+@app.get("/assessment/rsi")
+def current_rsi() -> dict:
+    return svc().assessment.rsi(today=date.today()).model_dump(mode="json")
+
+
+@app.get("/assessment/rsi/{version}")
+def rsi_version(version: str) -> dict:
+    try:
+        return svc().assessment.rsi(version).model_dump(mode="json")
+    except KeyError:
+        raise HTTPException(404, f"no such RSI version: {version}")
+
+
 class AdditionRequest(BaseModel):
     proposed_by: str
     kind: str  # event | product

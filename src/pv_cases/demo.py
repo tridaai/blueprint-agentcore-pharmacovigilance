@@ -7,7 +7,10 @@ verifies the evidence chain. Round 2 adds the dedup queue (the
 planted pair, assessed definite by the rule pack, awaiting a human)
 and the A.B. patient's history view. Round 3 adds the coding layer:
 the dictionary version in force, the main case's coded terms, and
-the coding-review queue. Run with ``make demo``.
+the coding-review queue. Round 4 adds the assessment layer: the
+planted seriousness/expectedness/clock fixtures graded by the three
+packs, and the clock board read a few days later. Run with
+``make demo``.
 """
 
 from __future__ import annotations
@@ -89,6 +92,37 @@ def run_demo(out=print) -> Services:
     out(f"Coding-review queue: {len(queue)} uncoded term(s) awaiting a named coder")
     for task in queue:
         out(f"  {task.task_id}: {task.verbatim!r} [{task.reason}]")
+
+    out("-" * 62)
+    from pv_cases.seed import assessment_fixtures
+
+    out("Round 4 fixtures — seriousness, expectedness, clocks (in code):")
+    for report in assessment_fixtures():
+        svc.intake.ingest(report, DEMO_DAY)
+        artefact = svc.assessment.current_assessment(f"CASE-{report.report_id}")
+        fired = [
+            f.criterion
+            for f in artefact.criteria
+            if f.status.value == "fired"
+        ]
+        clock = artefact.clock
+        deadline = f", deadline {clock.deadline}" if clock.deadline else ""
+        out(
+            f"  CASE-{report.report_id}: {artefact.seriousness.value}"
+            f" [{', '.join(fired) or 'no criterion fired'}],"
+            f" {artefact.expectedness.value},"
+            f" {clock.obligation_class}{deadline}"
+        )
+    board_day = date(2026, 10, 22)
+    out(f"Clock board at {board_day}:")
+    for entry in svc.assessment.clock_board(board_day):
+        if entry.deadline is None:
+            continue
+        out(
+            f"  {entry.case_id}: {entry.obligation_class},"
+            f" deadline {entry.deadline} — {entry.state}"
+            f" ({entry.days_remaining:+d}d)"
+        )
     return svc
 
 

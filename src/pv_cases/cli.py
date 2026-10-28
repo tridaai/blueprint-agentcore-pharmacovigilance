@@ -1,6 +1,6 @@
 """Command line: ``pv-agent feed|assemble|verify|dedup|confirm|
-reject|history-*|coding*|resolve-coding|dictionary*`` against the
-configured store."""
+reject|history-*|coding*|resolve-coding|dictionary*|assess|
+assessment|clocks|rsi`` against the configured store."""
 
 from __future__ import annotations
 
@@ -22,7 +22,8 @@ USAGE = (
     "history-product <product_code>|history-case <case_id>|"
     "coding <case_id>|coding-queue|"
     "resolve-coding <task_id> <coder> <term-or-code...>|"
-    "dictionary|dictionary-add <proposed_by> <event|product> <entry-json>"
+    "dictionary|dictionary-add <proposed_by> <event|product> <entry-json>|"
+    "assess <case_id>|assessment <case_id>|clocks [as-of]|rsi"
 )
 
 
@@ -162,6 +163,56 @@ def main(argv: list[str] | None = None) -> int:
             f"dictionary {dv.version} (by {dv.created_by}):"
             f" {len(dv.event_entries)} event entries,"
             f" {len(dv.product_entries)} product entries"
+        )
+        return 0
+    if cmd == "assess" and len(argv) == 2:
+        try:
+            artefact = svc.assessment.assess_case(argv[1], today)
+        except KeyError:
+            print(f"no such case: {argv[1]}")
+            return 1
+        clock = artefact.clock
+        deadline = f" deadline {clock.deadline}" if clock.deadline else ""
+        print(
+            f"{artefact.assessment_id}: seriousness={artefact.seriousness.value}"
+            f" expectedness={artefact.expectedness.value}"
+            f" clock={clock.obligation_class}{deadline}"
+        )
+        return 0
+    if cmd == "assessment" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        current = svc.assessment.current_assessment(argv[1])
+        if current is None:
+            print(f"{argv[1]}: no assessment yet")
+            return 1
+        print(json.dumps(current.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "clocks" and len(argv) <= 2:
+        from datetime import date as _date
+
+        as_of = _date.fromisoformat(argv[1]) if len(argv) == 2 else today
+        board = svc.assessment.clock_board(as_of)
+        if not board:
+            print(f"clock board at {as_of}: empty")
+        for entry in board:
+            deadline = f" deadline {entry.deadline}" if entry.deadline else ""
+            remaining = (
+                f" ({entry.days_remaining:+d}d)" if entry.days_remaining is not None else ""
+            )
+            print(
+                f"{entry.case_id}: {entry.obligation_class}{deadline}"
+                f" — {entry.state}{remaining}"
+            )
+        return 0
+    if cmd == "rsi":
+        rsi = svc.assessment.rsi(today=today)
+        labelled = sum(len(v) for v in rsi.products.values())
+        print(
+            f"reference safety information {rsi.version} (repo-built"
+            f" stand-in, not a real label): {labelled} labelled terms"
+            f" over {len(rsi.products)} products"
         )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
