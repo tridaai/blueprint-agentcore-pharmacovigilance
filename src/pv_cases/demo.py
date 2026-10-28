@@ -5,7 +5,9 @@ became cases and which became follow-up tasks, flags the suspected
 duplicate, assembles the main case's summary with its citations, and
 verifies the evidence chain. Round 2 adds the dedup queue (the
 planted pair, assessed definite by the rule pack, awaiting a human)
-and the A.B. patient's history view. Run with ``make demo``.
+and the A.B. patient's history view. Round 3 adds the coding layer:
+the dictionary version in force, the main case's coded terms, and
+the coding-review queue. Run with ``make demo``.
 """
 
 from __future__ import annotations
@@ -63,6 +65,30 @@ def run_demo(out=print) -> Services:
         f"History for patient {view.patient_key}: {view.case_count} case(s), "
         f"{view.event_count} event(s) — {terms}"
     )
+
+    out("-" * 62)
+    dictionary = svc.coding.dictionary(today=DEMO_DAY)
+    out(
+        f"Coding dictionary {dictionary.version} (repo-built extract,"
+        " not licensed MedDRA):"
+    )
+    for decision in svc.coding.current_decisions("CASE-RPT-2026-0001"):
+        if decision.status.value == "coded":
+            label = (
+                decision.preferred_term
+                if decision.subject_kind == "event"
+                else f"{decision.product_name} ({decision.product_code})"
+            )
+            out(
+                f"  {decision.subject_kind} {decision.verbatim!r} -> {label}"
+                f" [{decision.match_path.value}]"
+            )
+        else:
+            out(f"  {decision.subject_kind} {decision.verbatim!r} -> UNCODED")
+    queue = svc.coding.uncoded_queue()
+    out(f"Coding-review queue: {len(queue)} uncoded term(s) awaiting a named coder")
+    for task in queue:
+        out(f"  {task.task_id}: {task.verbatim!r} [{task.reason}]")
     return svc
 
 

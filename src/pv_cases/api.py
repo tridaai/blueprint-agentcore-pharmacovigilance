@@ -17,8 +17,16 @@ from pydantic import BaseModel
 
 from pv_cases import __version__
 from pv_cases.agent import CitationRefusal
+from pv_cases.coding import CodingError, CodingTaskClosed
 from pv_cases.dedup import DedupDecisionError
-from pv_cases.models import IntakeReport, is_named_human
+from pv_cases.models import (
+    SUBJECT_EVENT,
+    SUBJECT_PRODUCT,
+    DictionaryEntry,
+    IntakeReport,
+    ProductDictionaryEntry,
+    is_named_human,
+)
 from pv_cases.runtime_app import handle_invocation
 from pv_cases.wiring import Services, build_services
 
@@ -209,3 +217,135 @@ def patient_history(patient_key: str) -> dict:
 def product_history(product_code: str) -> dict:
     view = svc().history.build_product_history(product_code, date.today())
     return view.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------
+# Round 3: dictionary coding.
+# ---------------------------------------------------------------------
+
+
+@app.get("/cases/{case_id}/coding")
+def case_coding(case_id: str) -> list[dict]:
+    """The case's current coding decisions (one per subject)."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [d.model_dump(mode="json") for d in svc().coding.current_decisions(case_id)]
+
+
+@app.get("/cases/{case_id}/coding/decisions")
+def case_coding_decisions(case_id: str) -> list[dict]:
+    """Every coding decision ever taken for the case, including
+    superseded ones — the full provenance trail."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [
+        d.model_dump(mode="json") for d in svc().store.list_coding_decisions(case_id)
+    ]
+
+
+class RecodeRequest(BaseModel):
+    version: str | None = None
+
+
+@app.post("/cases/{case_id}/coding/recode")
+def recode_case(case_id: str, req: RecodeRequest) -> dict:
+    """(Re)code the case under a dictionary version (default: the
+    current one). Returns the decisions this run wrote."""
+    try:
+        written = svc().coding.code_case(case_id, date.today(), version=req.version)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc))
+    return {"written": [d.model_dump(mode="json") for d in written]}
+
+
+@app.get("/coding/queue")
+def coding_queue() -> list[dict]:
+    """The coding-review queue: uncoded terms awaiting a coder."""
+    return [t.model_dump(mode="json") for t in svc().coding.uncoded_queue()]
+
+
+class ResolveRequest(BaseModel):
+    coder: str
+    preferred_term: str | None = None
+    product_code: str | None = None
+
+
+@app.post("/coding/tasks/{task_id}/resolve")
+def resolve_coding_task(task_id: str, req: ResolveRequest) -> dict:
+    if not is_named_human(req.coder):
+        raise HTTPException(400, "a coding resolution needs a named human coder")
+    try:
+        decision = svc().coding.resolve(
+            task_id,
+            req.coder,
+            date.today(),
+            preferred_term=req.preferred_term,
+            product_code=req.product_code,
+        )
+    except KeyError:
+        raise HTTPException(404, f"no such coding task: {task_id}")
+    except CodingTaskClosed as exc:
+        raise HTTPException(409, str(exc))
+    except CodingError as exc:
+        raise HTTPException(400, str(exc))
+    return decision.model_dump(mode="json")
+
+
+@app.get("/coding/dictionary")
+def current_dictionary() -> dict:
+    return svc().coding.dictionary(today=date.today()).model_dump(mode="json")
+
+
+@app.get("/coding/dictionary/versions")
+def dictionary_versions() -> list[dict]:
+    return [
+        {
+            "version": v.version,
+            "created_on": v.created_on.isoformat(),
+            "created_by": v.created_by,
+            "note": v.note,
+            "supersedes_version": v.supersedes_version,
+            "event_entries": len(v.event_entries),
+            "product_entries": len(v.product_entries),
+        }
+        for v in svc().coding.list_versions(today=date.today())
+    ]
+
+
+@app.get("/coding/dictionary/{version}")
+def dictionary_version(version: str) -> dict:
+    try:
+        return svc().coding.dictionary(version).model_dump(mode="json")
+    except KeyError:
+        raise HTTPException(404, f"no such dictionary version: {version}")
+
+
+class AdditionRequest(BaseModel):
+    proposed_by: str
+    kind: str  # event | product
+    entry: dict
+    note: str = ""
+
+
+@app.post("/coding/dictionary/additions")
+def propose_dictionary_addition(req: AdditionRequest) -> dict:
+    """A coder's dictionary addition. It lands as a NEW dictionary
+    version — the response is that version; nothing already stored
+    changes."""
+    if not is_named_human(req.proposed_by):
+        raise HTTPException(400, "a dictionary addition needs a named human proposer")
+    try:
+        if req.kind == SUBJECT_EVENT:
+            entry = DictionaryEntry.model_validate(req.entry)
+        elif req.kind == SUBJECT_PRODUCT:
+            entry = ProductDictionaryEntry.model_validate(req.entry)
+        else:
+            raise HTTPException(400, f"unknown addition kind: {req.kind!r}")
+        version = svc().coding.propose_addition(
+            req.proposed_by, date.today(), req.kind, entry, note=req.note
+        )
+    except CodingError as exc:
+        raise HTTPException(400, str(exc))
+    except ValueError as exc:  # entry payload failed validation
+        raise HTTPException(400, str(exc))
+    return version.model_dump(mode="json")
