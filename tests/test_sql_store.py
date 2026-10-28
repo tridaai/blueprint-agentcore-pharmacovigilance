@@ -41,3 +41,35 @@ def test_dialect_rejects_unknown(tmp_path):
 
     with pytest.raises(ValueError):
         SqlCaseStore("carrier-pigeon", sqlite_path=str(tmp_path / "x.db"))
+
+
+class _RecordingConn:
+    """A connection double recording its statements: the
+    migration ledger insert must speak the dialect's own
+    placeholder — ``%s`` for psycopg, ``?`` for sqlite3. The
+    Postgres profile could never finish booting while the
+    runner spoke ``?`` to a psycopg connection (found by Round
+    10's Postgres parity leg)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def execute(self, sql, params=()):
+        self.calls.append((sql, params))
+        return []
+
+    def commit(self):
+        pass
+
+
+def test_migration_ledger_placeholder_matches_dialect():
+    from pv_cases.migrations import apply_migrations
+
+    for dialect, placeholder in [("postgres", "%s"), ("sqlite", "?")]:
+        conn = _RecordingConn()
+        applied = apply_migrations(conn, dialect)
+        assert applied  # every migration was unrecorded for the double
+        inserts = [sql for sql, _ in conn.calls if "INSERT INTO schema_migrations" in sql]
+        assert inserts and all(placeholder in sql for sql in inserts)
+        wrong = "%s" if dialect == "sqlite" else "?"
+        assert all(wrong not in sql for sql in inserts)

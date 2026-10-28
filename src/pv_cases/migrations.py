@@ -33,7 +33,16 @@ def migration_files(dialect: str) -> list[Path]:
 
 
 def apply_migrations(conn, dialect: str) -> list[str]:
-    """Apply unrecorded migrations; return the names applied now."""
+    """Apply unrecorded migrations; return the names applied now.
+
+    The ledger insert is the one statement here that takes a
+    parameter, and it must speak the connection's own placeholder
+    dialect: ``?`` for sqlite3, ``%s`` for psycopg. Until Round
+    10's Postgres parity leg exercised it, this function spoke
+    ``?`` unconditionally — so the Postgres profile could never
+    finish booting (the store's own queries translate in
+    ``_pg_execute``; this raw connection had no translator)."""
+    placeholder = "%s" if dialect == "postgres" else "?"
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY)"
     )
@@ -47,7 +56,10 @@ def apply_migrations(conn, dialect: str) -> list[str]:
             statement = statement.strip()
             if statement:
                 conn.execute(statement)
-        conn.execute("INSERT INTO schema_migrations (name) VALUES (?)", (path.name,))
+        conn.execute(
+            f"INSERT INTO schema_migrations (name) VALUES ({placeholder})",
+            (path.name,),
+        )
         done.append(path.name)
     conn.commit()
     return done
