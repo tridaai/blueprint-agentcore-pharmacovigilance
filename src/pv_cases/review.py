@@ -49,6 +49,13 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 
+from pv_cases.access import (
+    ACT_RECORD_REVIEW,
+    REASON_ACT_NOT_PERMITTED,
+    SURFACE_REVIEW,
+    Principal,
+    control_for,
+)
 from pv_cases.assessment import AssessmentService
 from pv_cases.coding import CodingService
 from pv_cases.evidence import EvidenceChain, canonical_json
@@ -171,6 +178,8 @@ class ReviewService:
         # case refuses new review acts — a sealed case is a
         # closed record.
         self.seal_lookup = None
+        # Round 10: the access control, bound by the wiring.
+        self.access = None
 
     # -- bindings ------------------------------------------------------
     def current_bindings(self, case_id: str) -> list[ReviewBinding]:
@@ -261,13 +270,19 @@ class ReviewService:
         decision: str,
         rationale: str,
         today: date,
+        principal: Principal | None = None,
     ) -> MedicalReviewAct:
         """Record one reviewer's decision on the case's current
         record. Refused in code — with the refusal named — when
         the act cannot stand: unnamed reviewer, unknown role or
         decision, a rationale the decision requires, a case with
         no assessment to review, a closed duplicate, or the same
-        person already holding a current act in the other role."""
+        person already holding a current act in the other role.
+        Round 10: where the call carries a principal, the access
+        pack judges first — the principal must hold the review
+        act, must hold *this* act's role (dual control is two
+        pack-authorised roles, not only two names), and must be
+        the reviewer the act names."""
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
@@ -301,6 +316,39 @@ class ReviewService:
         if decision == REVIEW_ACCEPT_WITH_COMMENT and not rationale:
             raise ReviewError(
                 "an accept_with_comment act must carry its comment"
+            )
+        if principal is not None:
+            control = control_for(self)
+            control.require_act(
+                principal,
+                ACT_RECORD_REVIEW,
+                surface=SURFACE_REVIEW,
+                target=case_id,
+                on=today,
+            )
+            if principal.role != role:
+                control.deny(
+                    principal_id=principal.id,
+                    role=principal.role,
+                    surface=SURFACE_REVIEW,
+                    target=case_id,
+                    reason=REASON_ACT_NOT_PERMITTED,
+                    detail=(
+                        f"a {role} review act must be recorded by a"
+                        f" principal holding the {role} role — dual"
+                        " control is two pack-authorised roles;"
+                        f" principal {principal.id} holds"
+                        f" {principal.role}"
+                    ),
+                    on=today,
+                )
+            control.require_actor(
+                principal,
+                reviewer,
+                act=ACT_RECORD_REVIEW,
+                surface=SURFACE_REVIEW,
+                target=case_id,
+                on=today,
             )
         bindings = self.current_bindings(case_id)
         if not any(b.artefact_kind == "assessment" for b in bindings):

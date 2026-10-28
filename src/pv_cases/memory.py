@@ -39,6 +39,12 @@ import hashlib
 from datetime import date, timedelta
 from typing import Protocol
 
+from pv_cases.access import (
+    ACT_RECALL_MEMORY,
+    SURFACE_MEMORY,
+    Principal,
+    guard_act,
+)
 from pv_cases.evidence import EvidenceChain, canonical_json
 from pv_cases.models import (
     MEMORY_STRATEGIES,
@@ -206,15 +212,32 @@ class MemoryService:
 
     # -- recall ----------------------------------------------------------
     def recall_for_case(
-        self, case_id: str, strategy: str, requested_by: str, today: date
+        self,
+        case_id: str,
+        strategy: str,
+        requested_by: str,
+        today: date,
+        principal: Principal | None = None,
     ) -> MemoryRetrieval:
         """Recall prior cases relevant to one case, under one
-        strategy. The requesting case is never its own match."""
+        strategy. The requesting case is never its own match.
+        Round 10: where the call carries a principal, the access
+        pack judges first — recall is casework, held by the
+        safety scientist and the review roles."""
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
         if not is_named_human(requested_by):
             raise MemoryError("a memory recall needs a named requester")
+        guard_act(
+            self,
+            principal,
+            ACT_RECALL_MEMORY,
+            surface=SURFACE_MEMORY,
+            target=case_id,
+            actor=requested_by,
+            on=today,
+        )
         if strategy not in MEMORY_PACK["strategies"]:
             raise MemoryError(f"unknown memory strategy: {strategy!r}")
         if self.seal_lookup is not None:
@@ -296,13 +319,27 @@ class MemoryService:
         )
 
     def recall_coding_precedents(
-        self, verbatim: str, requested_by: str, today: date
+        self,
+        verbatim: str,
+        requested_by: str,
+        today: date,
+        principal: Principal | None = None,
     ) -> MemoryRetrieval:
         """A desk recall (no requesting case): every stored
         decision on one verbatim term, across the book, by
-        reference. Nothing is written to any case's chain."""
+        reference. Nothing is written to any case's chain.
+        Round 10: where the call carries a principal, the access
+        pack judges first, as for a case recall."""
         if not is_named_human(requested_by):
             raise MemoryError("a memory recall needs a named requester")
+        guard_act(
+            self,
+            principal,
+            ACT_RECALL_MEMORY,
+            surface=SURFACE_MEMORY,
+            actor=requested_by,
+            on=today,
+        )
         target = normalise_text(verbatim)
         matches: list[MemoryMatch] = []
         seen: set[str] = set()

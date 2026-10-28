@@ -40,6 +40,13 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 
+from pv_cases.access import (
+    ACT_EXPORT_CASE,
+    ACT_SEAL_CASE,
+    SURFACE_SEALING,
+    Principal,
+    guard_act,
+)
 from pv_cases.assessment import AssessmentService
 from pv_cases.coding import CodingService
 from pv_cases.evidence import GENESIS_HASH, EvidenceChain, canonical_json
@@ -131,6 +138,8 @@ class SealingService:
         self.review = review
         self.coding = coding
         self.assessment = assessment
+        # Round 10: the access control, bound by the wiring.
+        self.access = None
 
     # -- lookups -----------------------------------------------------
     def get_seal(self, case_id: str) -> CaseSeal | None:
@@ -235,18 +244,34 @@ class SealingService:
 
     # -- sealing -------------------------------------------------------
     def seal_case(
-        self, case_id: str, sealed_by: str, today: date
+        self,
+        case_id: str,
+        sealed_by: str,
+        today: date,
+        principal: Principal | None = None,
     ) -> CaseSeal:
         """Seal one case's file. Refused in code — with the
         blocker named — when the sealer is unnamed, the case is
         closed as a duplicate, the case is already sealed, or
         its review gate does not stand complete over the current
-        record (missing roles, a standing hold, stale acts)."""
+        record (missing roles, a standing hold, stale acts).
+        Round 10: where the call carries a principal, the access
+        pack judges first — sealing is the medical reviewer's
+        act, and the principal must be the sealer named."""
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
         if not is_named_human(sealed_by):
             raise SealError("a seal needs a named human sealer")
+        guard_act(
+            self,
+            principal,
+            ACT_SEAL_CASE,
+            surface=SURFACE_SEALING,
+            target=case_id,
+            actor=sealed_by,
+            on=today,
+        )
         if case.status is CaseStatus.CLOSED_AS_DUPLICATE:
             raise SealError(
                 f"case {case_id} is closed as a duplicate of"
@@ -413,16 +438,32 @@ class SealingService:
         return canonical_json(package)
 
     def export_case(
-        self, case_id: str, exported_by: str, today: date
+        self,
+        case_id: str,
+        exported_by: str,
+        today: date,
+        principal: Principal | None = None,
     ) -> tuple[CaseExport, dict]:
         """Serve one export of a sealed case and record the
         serving. Refused — naming the seal requirement — when
         the case is not sealed: an unsealed file is still being
-        worked and has no export."""
+        worked and has no export. Round 10: where the call
+        carries a principal, the access pack judges first —
+        export is the medical reviewer's act, and the principal
+        must be the exporter named."""
         if self.store.get_case(case_id) is None:
             raise KeyError(f"no such case: {case_id}")
         if not is_named_human(exported_by):
             raise SealError("an export needs a named human exporter")
+        guard_act(
+            self,
+            principal,
+            ACT_EXPORT_CASE,
+            surface=SURFACE_SEALING,
+            target=case_id,
+            actor=exported_by,
+            on=today,
+        )
         seal = self.store.get_seal(case_id)
         if seal is None:
             raise SealError(

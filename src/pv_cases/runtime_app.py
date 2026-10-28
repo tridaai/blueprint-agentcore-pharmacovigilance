@@ -24,6 +24,13 @@ from datetime import date
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
+from pv_cases.access import (
+    ACT_ASSEMBLE_SUMMARY,
+    ACT_INTAKE_REPORT,
+    SURFACE_CASE,
+    SURFACE_SUMMARY,
+    AccessDeniedError,
+)
 from pv_cases.agent import CitationRefusal, ModelNotConfigured
 from pv_cases.models import IntakeReport
 from pv_cases.wiring import Services, build_services
@@ -49,6 +56,34 @@ def handle_invocation(payload: dict, session_id: str | None = None) -> dict:
     action = payload.get("action", "assemble_summary")
     today = date.today()
     extra = {"session_id": session_id} if session_id else {}
+    # Round 10: a payload may carry a principal ({"id", "role"}).
+    # A carried principal is authenticated against the access
+    # pack and judged for the action's act before any work runs;
+    # the denial is recorded like every refusal at this layer.
+    # No principal = the trusted local path, as before.
+    raw_principal = payload.get("principal")
+    if raw_principal is not None:
+        act = (
+            ACT_INTAKE_REPORT
+            if action == "ingest_and_assemble"
+            else ACT_ASSEMBLE_SUMMARY
+        )
+        surface = SURFACE_CASE if action == "ingest_and_assemble" else SURFACE_SUMMARY
+        try:
+            principal = svc.access.authenticate(
+                raw_principal, surface=surface, on=today
+            )
+            svc.access.require_act(
+                principal, act, surface=surface, on=today
+            )
+        except AccessDeniedError as exc:
+            log.warning("access denied for %s: %s", action, exc, extra=extra)
+            return {
+                "status": "access_denied",
+                "action": action,
+                "reason": exc.reason,
+                "detail": str(exc),
+            }
     if action == "assemble_summary":
         case_id = payload["case_id"]
         try:

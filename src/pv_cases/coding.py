@@ -35,6 +35,14 @@ from __future__ import annotations
 
 from datetime import date
 
+from pv_cases.access import (
+    ACT_PROPOSE_DICTIONARY_ADDITION,
+    ACT_RESOLVE_CODING_TASK,
+    SURFACE_CODING,
+    SURFACE_DICTIONARY,
+    Principal,
+    guard_act,
+)
 from pv_cases.evidence import EvidenceChain
 from pv_cases.reporting import current_report
 from pv_cases.models import (
@@ -539,14 +547,27 @@ class CodingService:
         today: date,
         preferred_term: str | None = None,
         product_code: str | None = None,
+        principal: Principal | None = None,
     ) -> CodingDecision:
         """The resolution act: a named coder chooses a term that
         exists in the current dictionary (for an ambiguous task,
         one of the recorded candidates). The new decision is
         manual, supersedes the uncoded one by link, and the act is
-        recorded on the case's evidence chain."""
+        recorded on the case's evidence chain. Round 10: where
+        the call carries a principal, the access pack judges
+        first — resolving coding work is the safety scientist's
+        act, and the principal must be the coder named."""
         if not is_named_human(coder):
             raise CodingError("a coding resolution needs a named human coder")
+        guard_act(
+            self,
+            principal,
+            ACT_RESOLVE_CODING_TASK,
+            surface=SURFACE_CODING,
+            target=task_id,
+            actor=coder,
+            on=today,
+        )
         task = self.store.get_coding_task(task_id)
         if task is None:
             raise KeyError(f"no such coding task: {task_id}")
@@ -666,14 +687,27 @@ class CodingService:
         kind: str,
         entry,
         note: str = "",
+        principal: Principal | None = None,
     ) -> DictionaryVersion:
         """Propose a dictionary addition. It takes effect only as
         a NEW dictionary version: the current version's artefacts
         are never touched, and decisions already taken keep the
         version they pinned. Collisions that would manufacture an
-        ambiguity or rewrite an existing mapping are refused."""
+        ambiguity or rewrite an existing mapping are refused.
+        Round 10: where the call carries a principal, the access
+        pack judges first — dictionary administration is the
+        case admin's act, and the principal must be the proposer
+        named."""
         if not is_named_human(proposed_by):
             raise CodingError("a dictionary addition needs a named human proposer")
+        guard_act(
+            self,
+            principal,
+            ACT_PROPOSE_DICTIONARY_ADDITION,
+            surface=SURFACE_DICTIONARY,
+            actor=proposed_by,
+            on=today,
+        )
         current = self.dictionary(today=today)
         if kind == SUBJECT_EVENT:
             if not (

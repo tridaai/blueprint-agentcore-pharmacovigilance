@@ -46,6 +46,16 @@ returns blueprint, adapted to this repo's artefacts:
   citation, never an instruction channel. There is no automatic
   release, no expiry, and no release for a sealed case: a sealed
   file is closed, holds included.
+- **Round 10 (RT-07): the release has role separation.** Where
+  a call carries a principal, the access pack judges the act —
+  the release belongs to the safety scientist and the two
+  review roles, and the principal must be the reviewer the act
+  names. On every path, a release may not come from the held
+  text's own reporter of record where the record names one:
+  releasing your own submitted text is not a second person's
+  judgement. Where the report names no reporter, the record
+  cannot tell, and that check does not fire — the limit is
+  stated in `release`, not papered over.
 """
 
 from __future__ import annotations
@@ -54,6 +64,14 @@ import hashlib
 import re
 from datetime import date
 
+from pv_cases.access import (
+    ACT_RELEASE_QUARANTINE,
+    REASON_SELF_RELEASE,
+    SURFACE_QUARANTINE,
+    Principal,
+    control_for,
+    guard_act,
+)
 from pv_cases.evidence import EvidenceChain, canonical_json
 from pv_cases.models import (
     QUARANTINE_ACT_RELEASE,
@@ -68,6 +86,7 @@ from pv_cases.models import (
     QuarantineFinding,
     QuarantineRecord,
     is_named_human,
+    normalise_text,
     seal_refusal_text,
 )
 
@@ -237,6 +256,9 @@ class QuarantineService:
         # Round 7's guard, bound by the wiring: a sealed case's
         # holds cannot be released — the file is closed.
         self.seal_lookup = None
+        # Round 10: the access control, bound by the wiring (a
+        # bare construction builds one over the store on use).
+        self.access = None
 
     # -- screening ---------------------------------------------------
     def screen_item(self, case_id: str, item, today: date) -> list[QuarantineRecord]:
@@ -323,12 +345,46 @@ class QuarantineService:
         return views
 
     # -- release -------------------------------------------------------
+    def _reporter_of_record(self, record: QuarantineRecord) -> str | None:
+        """The reporter the held field's report names, where the
+        record can tell: the report payload stands on the case's
+        chain under the record's evidence item, and an
+        identifiable reporter is one of the validity criteria —
+        but a report may identify its reporter by a contact
+        channel alone, naming nobody. Then this returns None and
+        the self-release check does not fire: the limit is that
+        identity here is the name string, and an unnamed reporter
+        cannot be matched against a releaser."""
+        for item in self.store.list_evidence(record.case_id):
+            if item.item_id != record.evidence_item_id:
+                continue
+            try:
+                report = IntakeReport.model_validate(
+                    self.chain.payload_of(item)
+                )
+            except Exception:
+                return None
+            name = report.reporter.name
+            return name if is_named_human(name) else None
+        return None
+
     def release(
-        self, record_id: str, released_by: str, rationale: str, today: date
+        self,
+        record_id: str,
+        released_by: str,
+        rationale: str,
+        today: date,
+        principal: Principal | None = None,
     ) -> QuarantineAct:
         """A named reviewer's release of one held field. Refused —
         in code — for an unnamed reviewer, a missing rationale, an
-        already-released record, or a sealed case."""
+        already-released record, or a sealed case. Round 10
+        (RT-07): where the call carries a principal, the access
+        pack judges the act first — the release belongs to the
+        safety scientist and the review roles, and the principal
+        must be the reviewer the act names. On every path, a
+        release may not come from the held text's own reporter of
+        record where the record names one."""
         record = self.store.get_quarantine_record(record_id)
         if record is None:
             raise KeyError(f"no such quarantine record: {record_id}")
@@ -349,6 +405,35 @@ class QuarantineService:
                 raise QuarantineError(
                     seal_refusal_text(seal, "quarantine releases")
                 )
+        guard_act(
+            self,
+            principal,
+            ACT_RELEASE_QUARANTINE,
+            surface=SURFACE_QUARANTINE,
+            target=record_id,
+            actor=released_by,
+            on=today,
+        )
+        reporter = self._reporter_of_record(record)
+        if reporter is not None and normalise_text(
+            reporter
+        ) == normalise_text(released_by):
+            detail = (
+                f"{released_by} reported the held text on"
+                f" {record.case_id} — a release is a second person's"
+                " judgement, never the reporter's own"
+            )
+            if principal is not None:
+                control_for(self).deny(
+                    principal_id=principal.id,
+                    role=principal.role,
+                    surface=SURFACE_QUARANTINE,
+                    target=record_id,
+                    reason=REASON_SELF_RELEASE,
+                    detail=detail,
+                    on=today,
+                )
+            raise QuarantineError(f"self-release refused: {detail}")
         acts = self.store.list_quarantine_acts(record_id)
         act = QuarantineAct(
             act_id=f"QUAA-{record_id.split('-')[-1]}-{len(acts) + 1:02d}",

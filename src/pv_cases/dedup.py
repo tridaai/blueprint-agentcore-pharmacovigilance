@@ -27,6 +27,12 @@ from __future__ import annotations
 
 from datetime import date
 
+from pv_cases.access import (
+    ACT_DECIDE_DEDUP_LINK,
+    SURFACE_DEDUP,
+    Principal,
+    guard_act,
+)
 from pv_cases.evidence import EvidenceChain
 from pv_cases.reporting import current_report
 from pv_cases.models import (
@@ -381,12 +387,27 @@ class DedupService:
         return self.store.list_dedup_links(status=DedupLinkStatus.PENDING.value)
 
     def confirm_link(
-        self, link_id: str, decided_by: str, today: date, note: str | None = None
+        self,
+        link_id: str,
+        decided_by: str,
+        today: date,
+        note: str | None = None,
+        principal: Principal | None = None,
     ) -> DedupLink:
         """Confirm: the later case closes as a duplicate of the
         earlier one. The case, its evidence and its chain stay
         exactly where they were — closure is a status and a chain
-        record, not a removal."""
+        record, not a removal. Round 10: where the call carries
+        a principal, the access pack judges first."""
+        guard_act(
+            self,
+            principal,
+            ACT_DECIDE_DEDUP_LINK,
+            surface=SURFACE_DEDUP,
+            target=link_id,
+            actor=decided_by,
+            on=today,
+        )
         link = self._pending_link(link_id, decided_by)
         link.status = DedupLinkStatus.CONFIRMED
         link.decided_by = decided_by
@@ -400,11 +421,26 @@ class DedupService:
         return link
 
     def reject_link(
-        self, link_id: str, decided_by: str, today: date, note: str | None = None
+        self,
+        link_id: str,
+        decided_by: str,
+        today: date,
+        note: str | None = None,
+        principal: Principal | None = None,
     ) -> DedupLink:
         """Reject: the link is annotated rejected and the later case
         proceeds (its status is restored unless another link still
-        holds it)."""
+        holds it). Round 10: where the call carries a principal,
+        the access pack judges first."""
+        guard_act(
+            self,
+            principal,
+            ACT_DECIDE_DEDUP_LINK,
+            surface=SURFACE_DEDUP,
+            target=link_id,
+            actor=decided_by,
+            on=today,
+        )
         link = self._pending_link(link_id, decided_by)
         link.status = DedupLinkStatus.REJECTED
         link.decided_by = decided_by

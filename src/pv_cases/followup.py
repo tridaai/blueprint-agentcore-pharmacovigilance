@@ -52,6 +52,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from pv_cases.access import (
+    ACT_SUBMIT_FOLLOW_UP,
+    SURFACE_FOLLOW_UP,
+    Principal,
+    guard_act,
+)
 from pv_cases.assessment import AssessmentService
 from pv_cases.coding import CodingService
 from pv_cases.dedup import DedupService
@@ -543,14 +549,29 @@ class FollowUpService:
 
     # -- submission ----------------------------------------------------
     def submit_follow_up(
-        self, task_id: str, report: IntakeReport, today: date
+        self,
+        task_id: str,
+        report: IntakeReport,
+        today: date,
+        principal: Principal | None = None,
     ) -> FollowUpSubmission:
         """Answer one request with one follow-up report. Refused —
         in code — when the request already stands resolved or
-        escalated: decided work does not take more reports."""
+        escalated: decided work does not take more reports.
+        Round 10: where the call carries a principal, the access
+        pack judges first — submitting a follow-up is intake and
+        safety-scientist work."""
         task = self.store.get_follow_up_request(task_id)
         if task is None:
             raise KeyError(f"no such follow-up request: {task_id}")
+        guard_act(
+            self,
+            principal,
+            ACT_SUBMIT_FOLLOW_UP,
+            surface=SURFACE_FOLLOW_UP,
+            target=task_id,
+            on=today,
+        )
         if task.case_id is not None:
             self._refuse_if_sealed(task.case_id)
         standing = self._derive(task, today)
