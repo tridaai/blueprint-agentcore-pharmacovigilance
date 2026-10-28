@@ -33,7 +33,15 @@ absences into tracked work with a lifecycle:
   identity (see reporting.py), and the case's awareness date is
   untouched — so a seriousness fact that lands on day 20 produces
   an expedited clock whose deadline is already past, and the
-  clock board says *breached*, out loud.
+  clock board says *breached*, out loud. The identity half of
+  the rule is enforced, not just stated (Round 9, RT-23): a
+  follow-up whose date of birth or reporter-held patient id
+  contradicts the record's is refused — it is a report about a
+  different patient, and intake is where it belongs. And when a
+  validity follow-up founds a case, day zero is the date the
+  report became valid, bounded below by the original report's
+  receipt: a backdated follow-up cannot found a case whose
+  clock started before anything was received (RT-20).
 
 Follow-up requests are internal task artefacts: nothing here
 sends anything anywhere, and nothing is ever submitted to a
@@ -80,7 +88,7 @@ from pv_cases.models import (
     MissingItem,
     seal_refusal_text,
 )
-from pv_cases.reporting import merge_reports
+from pv_cases.reporting import current_report, merge_reports
 from pv_cases.services import IntakeService
 from pv_cases.validity import assess_validity
 
@@ -118,6 +126,48 @@ FOLLOW_UP_PACK_VERSION = FOLLOW_UP_PACK["version"]
 class FollowUpError(ValueError):
     """A follow-up act that cannot be taken: the request is already
     resolved or escalated, or the report was already recorded."""
+
+
+def _refuse_reidentification(
+    record: IntakeReport, follow_up: IntakeReport
+) -> None:
+    """Round 9 (red team RT-23): a follow-up amends a case's
+    facts; it does not re-identify the case. The merge rule lets
+    a follow-up's present fields win — which, unchecked, lets a
+    report about a *different patient* silently rewrite whose
+    case this is (the patient key, the history views and recall
+    all follow the folded record). A follow-up whose hard
+    identifiers — date of birth, reporter-held patient id —
+    contradict the values the record already carries is refused
+    here, before anything lands: that report belongs in intake
+    as a new report, where de-duplication judges it. Fields the
+    record lacks, or that agree, are unaffected — completing a
+    missing identity is ordinary follow-up work."""
+    base, fu = record.patient, follow_up.patient
+    if (
+        base.date_of_birth is not None
+        and fu.date_of_birth is not None
+        and fu.date_of_birth != base.date_of_birth
+    ):
+        raise FollowUpError(
+            "the follow-up report's date of birth contradicts"
+            " the record — a follow-up amends a case's facts, it"
+            " does not re-identify the case; a report about a"
+            " different patient is a new report for intake, not"
+            " a follow-up"
+        )
+    from pv_cases.models import normalise_text
+
+    base_pid = normalise_text(base.reporter_patient_id or "")
+    fu_pid = normalise_text(fu.reporter_patient_id or "")
+    if base_pid and fu_pid and base_pid != fu_pid:
+        raise FollowUpError(
+            "the follow-up report's patient id contradicts the"
+            " record — a follow-up amends a case's facts, it"
+            " does not re-identify the case; a report about a"
+            " different patient is a new report for intake, not"
+            " a follow-up"
+        )
 
 
 # ---------------------------------------------------------------------
@@ -573,6 +623,9 @@ class FollowUpService:
         self, task: FollowUpRequest, report: IntakeReport, today: date
     ) -> FollowUpSubmission:
         case_id = task.case_id
+        _refuse_reidentification(
+            current_report(self.store, self.chain, case_id), report
+        )
         item_id = f"EV-{case_id}-FU-{report.report_id}"
         if any(i.item_id == item_id for i in self.store.list_evidence(case_id)):
             raise FollowUpError(
@@ -666,6 +719,7 @@ class FollowUpService:
                 self.objects.get_object(f"follow-ups/{act.follow_up_report_id}.json")
             )
             merged = merge_reports(merged, prior)
+        _refuse_reidentification(merged, report)
         merged = merge_reports(merged, report)
         if not assess_validity(merged).valid:
             act = self._record_act(
@@ -686,7 +740,13 @@ class FollowUpService:
             update={
                 "report_id": report.report_id,
                 "source": report.source,
-                "received_on": report.received_on,
+                # Day zero is the date the report became valid —
+                # the follow-up's receipt (the pinned rule) — but
+                # never earlier than the original report's
+                # receipt: a backdated follow-up cannot move day
+                # zero before the first thing the sponsor ever
+                # received (Round 9, red team RT-20).
+                "received_on": max(original.received_on, report.received_on),
             }
         )
         outcome = self.intake.ingest(founding, today)
