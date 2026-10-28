@@ -384,6 +384,17 @@ def test_summary_presents_uncoded_as_uncoded(coded):
     assert coded.assembler.resolver.problems("CASE-RPT-2026-0203", summary.statements) == []
 
 
+def test_summary_for_uncoded_product_case_assembles(coded):
+    # Regression: "Cardivane Plus" contains the dictionary label
+    # "Cardivane" as a substring — the intake statement reporting
+    # the product as reported must not trip the discipline.
+    summary = coded.assembler.assemble("CASE-RPT-2026-0205", DAY)
+    texts = [s.text for s in summary.statements]
+    assert any(t.startswith("Product uncoded: Cardivane Plus") for t in texts)
+    assert any(t.startswith("Event coded: Severe headache → Headache") for t in texts)
+    assert coded.assembler.resolver.problems("CASE-RPT-2026-0205", summary.statements) == []
+
+
 def test_summary_presents_coded_with_its_label(coded):
     summary = coded.assembler.assemble("CASE-RPT-2026-0202", DAY)
     texts = [s.text for s in summary.statements]
@@ -440,3 +451,25 @@ def test_misstated_coded_term_is_refused(coded):
     with pytest.raises(CitationRefusal):
         assembler.assemble("CASE-RPT-2026-0202", DAY)
     assert coded.store.list_summaries("CASE-RPT-2026-0202") == []
+
+
+class _AttachesLabelQuietly:
+    profile = "lying-test-double"
+
+    def propose_summary(self, facts):
+        item = next(f["item_id"] for f in facts if f["field"].startswith("coding."))
+        return [
+            SummaryStatement(
+                text="Event: Feeling drained (Fatigue).",
+                citations=[Citation(evidence_item_id=item, field="coding.0")],
+            )
+        ]
+
+
+def test_label_attached_without_claim_words_is_refused(coded):
+    # No "coded", no arrow — just a preferred term quietly attached
+    # to an uncoded verbatim. Still a presentation of coding.
+    assembler = CaseAssembler(coded.store, coded.chain, _AttachesLabelQuietly(), coding=coded.coding)
+    with pytest.raises(CitationRefusal):
+        assembler.assemble("CASE-RPT-2026-0204", DAY)
+    assert coded.store.list_summaries("CASE-RPT-2026-0204") == []

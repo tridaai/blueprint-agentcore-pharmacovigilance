@@ -277,10 +277,16 @@ def coding_presentation_problems(
             if decision.status is CodingStatus.UNCODED:
                 if "uncoded" in tnorm:
                     continue
+                # Judge only what the statement adds around the
+                # verbatim: the verbatim itself may contain a
+                # dictionary label as a substring ("Cardivane Plus"
+                # contains "Cardivane") without the statement
+                # claiming any coding for it.
+                remainder = tnorm.replace(vnorm, " ")
                 if (
                     "→" in stmt.text
-                    or "coded" in tnorm
-                    or any(label in tnorm for label in labels)
+                    or "coded" in remainder
+                    or any(label in remainder for label in labels)
                 ):
                     problems.append(
                         f"uncoded term presented as coded: {decision.verbatim!r}"
