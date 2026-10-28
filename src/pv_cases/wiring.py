@@ -6,6 +6,7 @@ same graph with different settings."""
 from __future__ import annotations
 
 from pv_cases.agent import CaseAssembler, model_for_profile
+from pv_cases.coding import CodingService
 from pv_cases.config import Settings
 from pv_cases.dedup import DedupService
 from pv_cases.evidence import EvidenceChain
@@ -31,7 +32,10 @@ class Services:
             self.store = SqlCaseStore("sqlite", sqlite_path=settings.sqlite_path)
         self.chain = EvidenceChain(self.store, self.objects)
         self.dedup = DedupService(self.store, self.chain)
-        self.intake = IntakeService(self.store, self.objects, dedup=self.dedup)
+        self.coding = CodingService(self.store, self.chain)
+        self.intake = IntakeService(
+            self.store, self.objects, dedup=self.dedup, coding=self.coding
+        )
         self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
         self.assembler = CaseAssembler(
@@ -39,6 +43,7 @@ class Services:
             self.chain,
             model_for_profile(settings.model_profile),
             history=self.history,
+            coding=self.coding,
         )
 
 

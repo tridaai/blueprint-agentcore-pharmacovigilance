@@ -40,7 +40,7 @@ class IntakeOutcome:
 
 
 class IntakeService:
-    def __init__(self, store, objects: ObjectStore, dedup=None):
+    def __init__(self, store, objects: ObjectStore, dedup=None, coding=None):
         self.store = store
         self.objects = objects
         self.chain = EvidenceChain(store, objects)
@@ -49,6 +49,11 @@ class IntakeService:
         # a duplicate finding is a link + a human queue item, never
         # a merge.
         self.dedup = dedup
+        # Round 3: when a coding service is wired, every new case is
+        # coded against the current dictionary version before
+        # ingest returns — the workflow order of the design brief:
+        # validity, de-duplication, then coding.
+        self.coding = coding
 
     def ingest(self, report: IntakeReport, today: date) -> IntakeOutcome:
         assessment = assess_validity(report)
@@ -91,6 +96,8 @@ class IntakeService:
             self.dedup.scan_case(case_id, today)
             # The scan may have marked this case duplicate_linked.
             case = self.store.get_case(case_id)
+        if self.coding is not None:
+            self.coding.code_case(case_id, today)
         return IntakeOutcome(report.report_id, case, None)
 
     def ingest_feed(self, reports: list[IntakeReport], today: date) -> list[IntakeOutcome]:
