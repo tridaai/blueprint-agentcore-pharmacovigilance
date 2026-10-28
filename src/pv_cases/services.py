@@ -25,7 +25,7 @@ from pv_cases.validity import assess_validity
 
 
 def _case_id_for(report_id: str) -> str:
-    return "CASE-" + report_id.removeprefix("RPT-")
+    return "CASE-" + report_id
 
 
 class IntakeOutcome:
