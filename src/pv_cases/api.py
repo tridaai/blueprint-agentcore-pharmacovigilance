@@ -17,7 +17,8 @@ from pydantic import BaseModel
 
 from pv_cases import __version__
 from pv_cases.agent import CitationRefusal
-from pv_cases.models import IntakeReport
+from pv_cases.dedup import DedupDecisionError
+from pv_cases.models import IntakeReport, is_named_human
 from pv_cases.runtime_app import handle_invocation
 from pv_cases.wiring import Services, build_services
 
@@ -126,3 +127,85 @@ def assemble(case_id: str) -> dict:
 @app.get("/cases/{case_id}/summaries")
 def list_summaries(case_id: str) -> list[dict]:
     return [s.model_dump(mode="json") for s in svc().store.list_summaries(case_id)]
+
+
+# ---------------------------------------------------------------------
+# Round 2: de-duplication + history views.
+# ---------------------------------------------------------------------
+
+
+class DecisionRequest(BaseModel):
+    decided_by: str
+    note: str | None = None
+
+
+@app.post("/dedup/scan")
+def dedup_scan() -> dict:
+    created = svc().dedup.scan_all(date.today())
+    return {"links_created": [l.link_id for l in created]}
+
+
+@app.get("/dedup/assessments")
+def list_dedup_assessments() -> list[dict]:
+    return [a.model_dump(mode="json") for a in svc().store.list_dedup_assessments()]
+
+
+@app.get("/dedup/links")
+def list_dedup_links(status: str | None = None) -> list[dict]:
+    return [l.model_dump(mode="json") for l in svc().store.list_dedup_links(status=status)]
+
+
+@app.get("/dedup/queue")
+def dedup_queue() -> list[dict]:
+    """The human dedup queue: links awaiting a named decision."""
+    return [l.model_dump(mode="json") for l in svc().dedup.pending_queue()]
+
+
+def _decide(link_id: str, req: DecisionRequest, confirm: bool) -> dict:
+    if not is_named_human(req.decided_by):
+        raise HTTPException(400, "a dedup decision needs a named human decider")
+    try:
+        if confirm:
+            link = svc().dedup.confirm_link(
+                link_id, req.decided_by, date.today(), note=req.note
+            )
+        else:
+            link = svc().dedup.reject_link(
+                link_id, req.decided_by, date.today(), note=req.note
+            )
+    except KeyError:
+        raise HTTPException(404, f"no such dedup link: {link_id}")
+    except DedupDecisionError as exc:
+        raise HTTPException(409, str(exc))
+    return link.model_dump(mode="json")
+
+
+@app.post("/dedup/links/{link_id}/confirm")
+def confirm_dedup_link(link_id: str, req: DecisionRequest) -> dict:
+    return _decide(link_id, req, confirm=True)
+
+
+@app.post("/dedup/links/{link_id}/reject")
+def reject_dedup_link(link_id: str, req: DecisionRequest) -> dict:
+    return _decide(link_id, req, confirm=False)
+
+
+@app.get("/cases/{case_id}/history")
+def case_patient_history(case_id: str) -> dict:
+    try:
+        view = svc().history.patient_history_for_case(case_id, date.today())
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return view.model_dump(mode="json")
+
+
+@app.get("/history/patient")
+def patient_history(patient_key: str) -> dict:
+    view = svc().history.build_patient_history(patient_key, date.today())
+    return view.model_dump(mode="json")
+
+
+@app.get("/history/products/{product_code}")
+def product_history(product_code: str) -> dict:
+    view = svc().history.build_product_history(product_code, date.today())
+    return view.model_dump(mode="json")

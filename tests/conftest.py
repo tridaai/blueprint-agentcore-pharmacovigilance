@@ -22,3 +22,15 @@ def services(tmp_path) -> Services:
 def fed(services) -> Services:
     services.intake.ingest_feed(services.feed.fetch_reports(), DAY)
     return services
+
+
+@pytest.fixture()
+def full(services) -> Services:
+    """The R1 reference feed plus Round 2's dedup fixtures — the
+    full planted book the dedup and history gates grade against."""
+    from pv_cases.seed import dedup_fixtures
+
+    services.intake.ingest_feed(services.feed.fetch_reports(), DAY)
+    for report in dedup_fixtures():
+        services.intake.ingest(report, DAY)
+    return services
