@@ -830,15 +830,10 @@ def gateway_invoke(req: GatewayInvokeRequest) -> dict:
     -32002 in the body. A denial is never raised as an HTTP
     error here, because that is not what the platform does."""
     args = dict(req.args)
-    if (
-        "case_id" not in args
-        and req.case_id is not None
-        and req.tool in ("case_record", "patient_history")
-    ):
-        args["case_id"] = req.case_id
+    case_id = args.pop("case_id", req.case_id)
     return svc().gateway.invoke(
         req.principal, req.role, req.tool, date.today(),
-        case_id=req.case_id, **args,
+        case_id=case_id, **args,
     )
 
 
