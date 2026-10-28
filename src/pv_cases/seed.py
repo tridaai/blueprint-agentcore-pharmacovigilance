@@ -178,6 +178,245 @@ def reference_feed() -> list[IntakeReport]:
     ]
 
 
+def assessment_fixtures() -> list[IntakeReport]:
+    """Round 4's planted set: one report per seriousness /
+    expectedness / clock shape the engines must grade exactly.
+    Each fixture's expected verdict is named in its comment —
+    seriousness (with the criteria that fire), expectedness (with
+    its basis), and the clock (class, day zero, deadline). All are
+    valid reports — every one becomes a case."""
+    return [
+        # Fatal + unexpected: the event's outcome records a death,
+        # and Vomiting is not in Cardivane's label (Nausea is —
+        # a different coded term). Expected: serious (death
+        # fired), unexpected (not_in_label), 7-day clock —
+        # day zero 2026-10-14, deadline 2026-10-21.
+        IntakeReport(
+            report_id="RPT-2026-0301",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 14),
+            patient=Patient(initials="E.W.", age=78, sex="F"),
+            reporter=Reporter(
+                name="Dr Elena Ruiz",
+                qualification="cardiologist",
+                email="eruiz@example-clinic.org",
+                country="ES",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Vomiting",
+                    onset_date=date(2026, 10, 13),
+                    outcome="fatal",
+                    description="Patient collapsed at home and died"
+                    " before the ambulance arrived.",
+                )
+            ],
+        ),
+        # Hospitalised + the specificity trap: the description
+        # records the admission, and the blistering rash codes to
+        # Rash vesicular — more specific than Dermaclear's
+        # labelled "Rash". Expected: serious (hospitalisation and
+        # other medically important fired), unexpected
+        # (more_specific_than_labelled), 15-day clock — day zero
+        # 2026-10-16, deadline 2026-10-31.
+        IntakeReport(
+            report_id="RPT-2026-0302",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 16),
+            patient=Patient(initials="P.N.", age=44, sex="F"),
+            reporter=Reporter(
+                name="Dr Ines Halvorsen",
+                qualification="dermatologist",
+                email="ihalvorsen@example-clinic.org",
+            ),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Blistering rash on hands",
+                    onset_date=date(2026, 10, 15),
+                    outcome="recovering",
+                    description="Admitted to hospital for wound care"
+                    " and IV fluids; discharged after two days.",
+                )
+            ],
+        ),
+        # Serious but expected: hospitalised overnight on a
+        # labelled Somnirel term. Expected: serious
+        # (hospitalisation fired), expected (labelled_term),
+        # periodic — no expedited clock.
+        IntakeReport(
+            report_id="RPT-2026-0303",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 18),
+            patient=Patient(initials="J.A.", age=51, sex="M"),
+            reporter=Reporter(
+                name="Dr Mara Lindqvist",
+                qualification="GP",
+                email="mlindqvist@example-clinic.org",
+            ),
+            suspect_product_code="NBT-204",
+            suspect_product_name="Somnirel",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Could not stay awake at work",
+                    onset_date=date(2026, 10, 17),
+                    outcome="recovered",
+                    description="Kept in hospital overnight for"
+                    " observation, then discharged.",
+                )
+            ],
+        ),
+        # The quiet case: every deciding fact present, none
+        # positive, the term labelled. Expected: non-serious,
+        # expected, periodic.
+        IntakeReport(
+            report_id="RPT-2026-0304",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 19),
+            patient=Patient(initials="D.K.", age=36, sex="F"),
+            reporter=Reporter(name="Patient self report", email="dk@example.net"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Nausea",
+                    onset_date=date(2026, 10, 18),
+                    outcome="recovered",
+                    description="Felt sick after the morning dose;"
+                    " settled by evening without treatment.",
+                )
+            ],
+        ),
+        # The unassessable case: no outcome and no description —
+        # the facts that would decide death, hospitalisation and
+        # disability are simply absent. Expected: seriousness
+        # cannot_assess (those three criteria name
+        # events.0.outcome), expectedness expected (Headache is
+        # labelled for Cardivane), clock awaiting_assessment.
+        IntakeReport(
+            report_id="RPT-2026-0305",
+            source=ReportSource.CALL_CENTRE,
+            received_on=date(2026, 10, 20),
+            patient=Patient(initials="H.B.", age=62, sex="M"),
+            reporter=Reporter(name="Call centre agent R. Patel", phone="+1-555-0199"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Severe headache",
+                    onset_date=date(2026, 10, 19),
+                )
+            ],
+        ),
+        # The uncoded case: the event term is not in the
+        # dictionary, so the coded-term criteria and the
+        # expectedness check have nothing to read. Expected:
+        # seriousness cannot_assess (other medically important
+        # names events.0.coding), expectedness cannot_assess
+        # (event_uncoded), clock awaiting_assessment.
+        IntakeReport(
+            report_id="RPT-2026-0306",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 21),
+            patient=Patient(initials="C.F.", age=55, sex="F"),
+            reporter=Reporter(name="Patient self report", email="cf@example.net"),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Tingling in the fingers",
+                    onset_date=date(2026, 10, 20),
+                    outcome="recovering",
+                    description="Tingling noted at the review visit.",
+                )
+            ],
+        ),
+        # Life-threatening + unexpected: the outcome itself
+        # records the life-threatening course, and Vomiting is
+        # not in Somnirel's label. Expected: serious
+        # (life_threatening fired), unexpected (not_in_label),
+        # 7-day clock — day zero 2026-10-20, deadline 2026-10-27.
+        IntakeReport(
+            report_id="RPT-2026-0307",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 20),
+            patient=Patient(initials="O.T.", age=70, sex="M"),
+            reporter=Reporter(
+                name="Dr Elena Ruiz",
+                qualification="cardiologist",
+                email="eruiz@example-clinic.org",
+                country="ES",
+            ),
+            suspect_product_code="NBT-204",
+            suspect_product_name="Somnirel",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Vomiting",
+                    onset_date=date(2026, 10, 19),
+                    outcome="life-threatening",
+                    description="Rushed to intensive care with"
+                    " repeated vomiting and dehydration.",
+                )
+            ],
+        ),
+        # Disability by outcome: "recovered with sequelae" is the
+        # disability course, on a labelled term. Expected:
+        # serious (disability fired), expected, periodic.
+        IntakeReport(
+            report_id="RPT-2026-0308",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 21),
+            patient=Patient(initials="B.S.", age=59, sex="F"),
+            reporter=Reporter(
+                name="Pharmacist D. Osei",
+                qualification="pharmacist",
+                email="dosei@example-pharmacy.org",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Dizziness and fall at home",
+                    onset_date=date(2026, 10, 20),
+                    outcome="recovered with sequelae",
+                    description="Fractured wrist in the fall; grip"
+                    " strength not expected to fully return.",
+                )
+            ],
+        ),
+        # Congenital by description: a literature report of a
+        # newborn whose description carries the word itself, on a
+        # labelled term. Expected: serious (congenital_anomaly
+        # fired), expected, periodic.
+        IntakeReport(
+            report_id="RPT-2026-0309",
+            source=ReportSource.LITERATURE,
+            received_on=date(2026, 10, 22),
+            patient=Patient(initials="R.", age_group="0-27 days", sex="M"),
+            reporter=Reporter(
+                name="Dr Ines Halvorsen",
+                qualification="dermatologist",
+                email="ihalvorsen@example-clinic.org",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Tiredness all day",
+                    onset_date=date(2026, 10, 21),
+                    outcome="recovering",
+                    description="Newborn delivered with a congenital"
+                    " heart defect; the mother took Cardivane"
+                    " throughout pregnancy.",
+                )
+            ],
+        ),
+    ]
+
+
 def coding_fixtures() -> list[IntakeReport]:
     """Round 3's planted set: one report per coding match path, plus
     the traps the lookup must refuse to guess. Each fixture's
