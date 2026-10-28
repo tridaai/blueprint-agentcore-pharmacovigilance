@@ -7,14 +7,23 @@ from __future__ import annotations
 
 from pv_cases.agent import CaseAssembler, model_for_profile
 from pv_cases.assessment import AssessmentService
-from pv_cases.coding import CodingService
+from pv_cases.coding import CodingService, lookup_event
 from pv_cases.config import Settings
 from pv_cases.dedup import DedupService
 from pv_cases.evidence import EvidenceChain
 from pv_cases.followup import FollowUpService
+from pv_cases.gateway import (
+    TOOL_CASE_RECORD,
+    TOOL_DICTIONARY_LOOKUP,
+    TOOL_PATIENT_HISTORY,
+    GatewayService,
+)
 from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
+from pv_cases.memory import MemoryService
 from pv_cases.object_store import LocalObjectStore
+from pv_cases.quarantine import QuarantineService
+from pv_cases.reporting import current_report
 from pv_cases.review import ReviewService
 from pv_cases.sealing import SealingService
 from pv_cases.services import IntakeService
@@ -45,6 +54,11 @@ class Services:
             coding=self.coding,
             assessment=self.assessment,
         )
+        # Round 8: the injection quarantine. Screening runs where
+        # report text lands — intake binds it here, the follow-up
+        # service and the assembler bind below.
+        self.quarantine = QuarantineService(self.store, self.chain)
+        self.intake.quarantine = self.quarantine
         # Round 5: the follow-up workflow. It founds cases through
         # intake; intake raises its requests — the wiring binds the
         # two after both exist.
@@ -58,6 +72,7 @@ class Services:
             dedup=self.dedup,
         )
         self.intake.followup = self.followup
+        self.followup.quarantine = self.quarantine
         # Round 6: the medical-reviewer gate. It reads the coding
         # and assessment layers to bind the record a review
         # decides, and records its acts on the evidence chain.
@@ -96,6 +111,58 @@ class Services:
             assessment=self.assessment,
         )
         self.assembler.seal_lookup = self.sealing.get_seal
+        # Round 8: the Memory port (local double behind it) and
+        # the Gateway with the policy pack in front of the three
+        # tools it catalogues. Recall writes on the requesting
+        # case's chain and a release writes on its case's chain,
+        # so both take the seal guard on the same terms as the
+        # other writers.
+        self.memory = MemoryService(self.store, self.chain)
+        self.memory.seal_lookup = self.sealing.get_seal
+        self.quarantine.seal_lookup = self.sealing.get_seal
+        self.assembler.quarantine = self.quarantine
+        self.gateway = GatewayService(self.store)
+        self.gateway.register_tool(
+            TOOL_CASE_RECORD,
+            lambda case_id: current_report(
+                self.store, self.chain, case_id
+            ).model_dump(mode="json"),
+        )
+        from datetime import date as _date
+
+        self.gateway.register_tool(
+            TOOL_PATIENT_HISTORY,
+            lambda case_id: self.history.patient_history_for_case(
+                case_id, _date.today()
+            ).model_dump(mode="json"),
+        )
+        self.gateway.register_tool(
+            TOOL_DICTIONARY_LOOKUP, self._dictionary_lookup
+        )
+
+    def _dictionary_lookup(self, verbatim: str) -> dict:
+        """The gateway's dictionary tool: the coding layer's own
+        tiered lookup over the current dictionary version."""
+        dictionary = self.coding.dictionary()
+        entry, path, reason, candidates = lookup_event(
+            verbatim, dictionary.event_entries
+        )
+        if entry is None:
+            return {
+                "verbatim": verbatim,
+                "status": "uncoded",
+                "reason": reason,
+                "candidates": candidates,
+                "dictionary_version": dictionary.version,
+            }
+        return {
+            "verbatim": verbatim,
+            "status": "coded",
+            "preferred_term": entry.preferred_term,
+            "soc": entry.soc,
+            "match_path": path.value,
+            "dictionary_version": dictionary.version,
+        }
 
 
 def build_services(settings: Settings | None = None) -> Services:
