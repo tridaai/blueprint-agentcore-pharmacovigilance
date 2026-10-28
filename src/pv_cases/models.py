@@ -1091,3 +1091,186 @@ class CodingReviewTask(BaseModel):
     resolved_by: str | None = None
     resolved_on: date | None = None
     resolution_decision_id: str | None = None
+
+
+# ---------------------------------------------------------------------
+# Round 8: injection quarantine, the Memory port, the Gateway +
+# Policy ports.
+#
+# Three regulated-case disciplines the earlier rounds left as
+# ports on the architecture page, made real:
+#
+# - A *quarantine record* is the screening verdict on one free-text
+#   field of one report on a case's chain (the report narrative, an
+#   event description): the field is held — it reaches no drafting
+#   or summary surface and no model prompt — until a named
+#   reviewer's *quarantine act* releases it. The source text itself
+#   is never altered: it stands in the evidence payload exactly as
+#   reported, and the record names the field, the text's hash and
+#   the pack rules that fired. Design Law 7 made mechanical:
+#   instructions inside source documents are quarantined, never
+#   obeyed.
+# - A *memory retrieval* is one recorded act of cross-case recall
+#   through the Memory port: the strategy, the requesting case,
+#   and the matches — each match a reference (case id, artefact
+#   ids, the coded facts that matched), never a copy of another
+#   case's facts and never anything that identifies a patient or
+#   a reporter. Retrievals are insert-only, expire under the
+#   memory pack's retention rule, and expire as tombstones: the
+#   record stands, the recall stops serving it.
+# - A *gateway call* is one tool invocation through the Gateway
+#   port, judged by the policy pack before the tool runs: the
+#   principal, their role, the tool, the PHI family it touches,
+#   the decision and the pack rule that decided. A denial is the
+#   AgentCore shape — HTTP 200 carrying a JSON-RPC error with
+#   code -32002 — and the tool behind it never executes.
+#
+# All three artefact families are insert-only, like everything
+# since Round 3: there is no update or delete for any of them.
+# ---------------------------------------------------------------------
+
+# Quarantine finding kinds (the screening pack's classes).
+QUARANTINE_KIND_INSTRUCTION = "instruction_directive"
+QUARANTINE_KIND_ROLE_PLAY = "role_impersonation"
+QUARANTINE_KIND_VERDICT = "verdict_directive"
+QUARANTINE_KIND_AUTHORITY = "authority_impersonation"
+QUARANTINE_KIND_ENCODED = "encoded_payload"
+
+# Quarantine act kinds. Release is the only act: a hold is the
+# record's existence, and it ends only by a named release.
+QUARANTINE_ACT_RELEASE = "release"
+
+
+class QuarantineFinding(BaseModel):
+    """One screening-pack rule that fired on one held field: the
+    rule, its class, and the matched span (truncated) — enough for
+    a reviewer to judge the hold without the drafting surfaces
+    ever seeing the text."""
+
+    rule_id: str
+    kind: str  # QUARANTINE_KIND_*
+    excerpt: str
+
+
+class QuarantineRecord(BaseModel):
+    """The screening verdict on one free-text field of one report
+    on one case's chain. The record is content-addressed over
+    (case, evidence item, field, text hash): re-screening the
+    same text is the same record, and a follow-up that changes
+    the text is a new field version with its own verdict."""
+
+    record_id: str
+    case_id: str
+    evidence_item_id: str
+    source_kind: str  # intake_report | follow_up_report | original_report
+    field: str  # narrative | events.<i>.description
+    text_sha256: str
+    findings: list[QuarantineFinding] = Field(default_factory=list)
+    pack_version: str
+    recorded_on: date
+
+
+class QuarantineAct(BaseModel):
+    """A named reviewer's release of one held field. The act
+    names the reviewer and carries their rationale; the field is
+    usable again from the act onward, as data — the act never
+    edits the record or the source text."""
+
+    act_id: str
+    record_id: str
+    case_id: str
+    kind: str  # QUARANTINE_ACT_RELEASE
+    released_by: str
+    rationale: str = ""
+    pack_version: str
+    recorded_on: date
+
+
+class QuarantineFieldView(BaseModel):
+    """One held (or released) field read against the case's acts:
+    the record, whether a release stands over it, and the act
+    that released it where one exists."""
+
+    record: QuarantineRecord
+    released: bool
+    release_act_id: str | None = None
+    released_by: str | None = None
+
+
+# Memory strategies (the memory pack's recall shapes).
+MEMORY_STRATEGY_SAME_PATIENT = "same_patient"
+MEMORY_STRATEGY_SAME_PRODUCT_EVENT = "same_product_event"
+MEMORY_STRATEGY_CODING_PRECEDENT = "coding_precedent"
+MEMORY_STRATEGIES = [
+    MEMORY_STRATEGY_SAME_PATIENT,
+    MEMORY_STRATEGY_SAME_PRODUCT_EVENT,
+    MEMORY_STRATEGY_CODING_PRECEDENT,
+]
+
+
+class MemoryMatch(BaseModel):
+    """One prior case a retrieval matched, by reference only: the
+    case id, the artefacts that evidence the match, and the coded
+    facts the match rests on. No patient or reporter field, no
+    narrative text — a match points at a case file, it does not
+    copy one, and it never merges the two cases' facts."""
+
+    case_id: str
+    basis: str  # same_patient_key | same_product_and_coded_term | same_verbatim_term
+    artefact_ids: list[str] = Field(default_factory=list)
+    coded_term: str | None = None
+    seriousness: str | None = None
+
+
+class MemoryRetrieval(BaseModel):
+    """One recorded recall through the Memory port. The subject
+    is carried as a sha256 fingerprint, never as the key itself:
+    a patient key is built from identifying characteristics, and
+    the retrieval record does not need it to prove what it did.
+    ``expires_on`` is the retention pack's date; past it the
+    retrieval is a tombstone — kept, counted, never served."""
+
+    retrieval_id: str
+    case_id: str | None = None  # the requesting case; None = desk recall
+    requested_by: str
+    requested_on: date
+    strategy: str  # MEMORY_STRATEGY_*
+    subject_fingerprint: str
+    subject_label: str  # a non-identifying description of the subject
+    matches: list[MemoryMatch] = Field(default_factory=list)
+    pack_version: str
+    expires_on: date
+
+
+# Gateway decisions and the denial's wire shape (design: Policy
+# denials arrive as HTTP 200 + JSON-RPC -32002, never as a 403).
+GATEWAY_DECISION_ALLOW = "allow"
+GATEWAY_DECISION_DENY = "deny"
+GATEWAY_DENIAL_CODE = -32002
+GATEWAY_DENIAL_HTTP_STATUS = 200
+
+# PHI families a gateway tool touches (the policy pack's caps are
+# stated per family).
+GATEWAY_PHI_NONE = "none"
+GATEWAY_PHI_CASE_RECORD = "case_record"
+GATEWAY_PHI_PATIENT_HISTORY = "patient_history"
+
+
+class GatewayCall(BaseModel):
+    """One tool invocation through the Gateway port, judged by
+    the policy pack before the tool ran: who called, in what
+    role, which tool, the PHI family it touches, the decision and
+    the rule that decided. Denied calls are recorded on exactly
+    the same terms as allowed ones — the record is how a denial
+    is surfaced, since the wire answer is a 200."""
+
+    call_id: str
+    tool: str
+    principal: str
+    role: str
+    case_id: str | None = None
+    phi_family: str  # GATEWAY_PHI_*
+    decision: str  # GATEWAY_DECISION_*
+    rule_id: str
+    pack_version: str
+    recorded_on: date

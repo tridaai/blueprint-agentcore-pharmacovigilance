@@ -31,9 +31,13 @@ from pv_cases.models import (
     FollowUpAct,
     FollowUpRequest,
     FollowUpTask,
+    GatewayCall,
     MedicalReviewAct,
+    MemoryRetrieval,
     PatientHistoryView,
     ProductHistoryView,
+    QuarantineAct,
+    QuarantineRecord,
     ReferenceSafetyInfo,
 )
 
@@ -106,6 +110,21 @@ class CaseStore(Protocol):
     def list_seals(self) -> list[CaseSeal]: ...
     def add_export(self, export: CaseExport) -> None: ...
     def list_exports(self, case_id: str | None = None) -> list[CaseExport]: ...
+    # Round 8: quarantine records + release acts, memory
+    # retrievals, gateway calls. Insert-only, like the review
+    # acts — there is deliberately no update or delete here; a
+    # hold ends by a release act, a retrieval expires standing,
+    # and a gateway call is recorded before its tool runs.
+    def add_quarantine_record(self, record: QuarantineRecord) -> None: ...
+    def get_quarantine_record(self, record_id: str) -> QuarantineRecord | None: ...
+    def list_quarantine_records(self, case_id: str | None = None) -> list[QuarantineRecord]: ...
+    def add_quarantine_act(self, act: QuarantineAct) -> None: ...
+    def list_quarantine_acts(self, record_id: str | None = None) -> list[QuarantineAct]: ...
+    def add_memory_retrieval(self, retrieval: MemoryRetrieval) -> None: ...
+    def get_memory_retrieval(self, retrieval_id: str) -> MemoryRetrieval | None: ...
+    def list_memory_retrievals(self, case_id: str | None = None) -> list[MemoryRetrieval]: ...
+    def add_gateway_call(self, call: GatewayCall) -> None: ...
+    def list_gateway_calls(self) -> list[GatewayCall]: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -720,6 +739,124 @@ class SqlCaseStore:
             )
         return [CaseExport.model_validate_json(r[0]) for r in rows]
 
+    # -- Round 8: quarantine, memory, gateway -------------------
+    def add_quarantine_record(self, record: QuarantineRecord) -> None:
+        self._run(
+            "INSERT INTO quarantine_records (record_id, case_id,"
+            " evidence_item_id, field, payload) VALUES (?,?,?,?,?)",
+            (
+                record.record_id,
+                record.case_id,
+                record.evidence_item_id,
+                record.field,
+                record.model_dump_json(),
+            ),
+        )
+
+    def get_quarantine_record(self, record_id: str) -> QuarantineRecord | None:
+        row = self._run(
+            "SELECT payload FROM quarantine_records WHERE record_id = ?",
+            (record_id,),
+            fetch="one",
+        )
+        return QuarantineRecord.model_validate_json(row[0]) if row else None
+
+    def list_quarantine_records(
+        self, case_id: str | None = None
+    ) -> list[QuarantineRecord]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM quarantine_records ORDER BY record_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM quarantine_records WHERE case_id = ?"
+                " ORDER BY record_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [QuarantineRecord.model_validate_json(r[0]) for r in rows]
+
+    def add_quarantine_act(self, act: QuarantineAct) -> None:
+        self._run(
+            "INSERT INTO quarantine_acts (act_id, record_id, case_id,"
+            " payload) VALUES (?,?,?,?)",
+            (act.act_id, act.record_id, act.case_id, act.model_dump_json()),
+        )
+
+    def list_quarantine_acts(
+        self, record_id: str | None = None
+    ) -> list[QuarantineAct]:
+        if record_id is None:
+            rows = self._run(
+                "SELECT payload FROM quarantine_acts ORDER BY act_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM quarantine_acts WHERE record_id = ?"
+                " ORDER BY act_id",
+                (record_id,),
+                fetch="all",
+            )
+        return [QuarantineAct.model_validate_json(r[0]) for r in rows]
+
+    def add_memory_retrieval(self, retrieval: MemoryRetrieval) -> None:
+        self._run(
+            "INSERT INTO memory_retrievals (retrieval_id, case_id,"
+            " payload) VALUES (?,?,?)",
+            (
+                retrieval.retrieval_id,
+                retrieval.case_id,
+                retrieval.model_dump_json(),
+            ),
+        )
+
+    def get_memory_retrieval(self, retrieval_id: str) -> MemoryRetrieval | None:
+        row = self._run(
+            "SELECT payload FROM memory_retrievals WHERE retrieval_id = ?",
+            (retrieval_id,),
+            fetch="one",
+        )
+        return MemoryRetrieval.model_validate_json(row[0]) if row else None
+
+    def list_memory_retrievals(
+        self, case_id: str | None = None
+    ) -> list[MemoryRetrieval]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM memory_retrievals ORDER BY retrieval_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM memory_retrievals WHERE case_id = ?"
+                " ORDER BY retrieval_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [MemoryRetrieval.model_validate_json(r[0]) for r in rows]
+
+    def add_gateway_call(self, call: GatewayCall) -> None:
+        self._run(
+            "INSERT INTO gateway_calls (call_id, tool, role, decision,"
+            " payload) VALUES (?,?,?,?,?)",
+            (
+                call.call_id,
+                call.tool,
+                call.role,
+                call.decision,
+                call.model_dump_json(),
+            ),
+        )
+
+    def list_gateway_calls(self) -> list[GatewayCall]:
+        rows = self._run(
+            "SELECT payload FROM gateway_calls ORDER BY call_id", fetch="all"
+        )
+        return [GatewayCall.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -742,6 +879,10 @@ class InMemoryCaseStore:
         self.review_acts: dict[str, MedicalReviewAct] = {}
         self.seals: dict[str, CaseSeal] = {}
         self.exports: dict[str, CaseExport] = {}
+        self.quarantine_records: dict[str, QuarantineRecord] = {}
+        self.quarantine_acts: dict[str, QuarantineAct] = {}
+        self.memory_retrievals: dict[str, MemoryRetrieval] = {}
+        self.gateway_calls: dict[str, GatewayCall] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -927,3 +1068,48 @@ class InMemoryCaseStore:
         if case_id is not None:
             items = [e for e in items if e.case_id == case_id]
         return items
+
+    def add_quarantine_record(self, record: QuarantineRecord) -> None:
+        self.quarantine_records[record.record_id] = record
+
+    def get_quarantine_record(self, record_id: str) -> QuarantineRecord | None:
+        return self.quarantine_records.get(record_id)
+
+    def list_quarantine_records(
+        self, case_id: str | None = None
+    ) -> list[QuarantineRecord]:
+        items = [self.quarantine_records[k] for k in sorted(self.quarantine_records)]
+        if case_id is not None:
+            items = [r for r in items if r.case_id == case_id]
+        return items
+
+    def add_quarantine_act(self, act: QuarantineAct) -> None:
+        self.quarantine_acts[act.act_id] = act
+
+    def list_quarantine_acts(
+        self, record_id: str | None = None
+    ) -> list[QuarantineAct]:
+        items = [self.quarantine_acts[k] for k in sorted(self.quarantine_acts)]
+        if record_id is not None:
+            items = [a for a in items if a.record_id == record_id]
+        return items
+
+    def add_memory_retrieval(self, retrieval: MemoryRetrieval) -> None:
+        self.memory_retrievals[retrieval.retrieval_id] = retrieval
+
+    def get_memory_retrieval(self, retrieval_id: str) -> MemoryRetrieval | None:
+        return self.memory_retrievals.get(retrieval_id)
+
+    def list_memory_retrievals(
+        self, case_id: str | None = None
+    ) -> list[MemoryRetrieval]:
+        items = [self.memory_retrievals[k] for k in sorted(self.memory_retrievals)]
+        if case_id is not None:
+            items = [r for r in items if r.case_id == case_id]
+        return items
+
+    def add_gateway_call(self, call: GatewayCall) -> None:
+        self.gateway_calls[call.call_id] = call
+
+    def list_gateway_calls(self) -> list[GatewayCall]:
+        return [self.gateway_calls[k] for k in sorted(self.gateway_calls)]
