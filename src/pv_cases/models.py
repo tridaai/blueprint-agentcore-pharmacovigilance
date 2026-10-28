@@ -936,6 +936,137 @@ class ReviewQueueEntry(BaseModel):
     has_stale_acts: bool = False
 
 
+# ---------------------------------------------------------------------
+# Round 7: sealing, export, offline verification.
+#
+# A *case seal* is the named act that closes a medically reviewed
+# case file: it binds the case's full artefact inventory (every
+# artefact by kind, id and content hash), the evidence chain's
+# head at seal time, the review bindings the gate was satisfied
+# over, and the pack versions in force. A sealed case is a closed
+# record — the service layer refuses new follow-ups, recodes,
+# assessments, review acts and summaries for it, and there is no
+# unseal: a correction is a new case. A *case export* is one
+# recorded serving of the sealed inventory as a deterministic
+# package; the export record (who, when, the package's hash) is
+# stored and written on the case's evidence chain. Neither a seal
+# nor an export submits anything anywhere — they produce a
+# reviewable package, and what a sponsor does with it is the
+# sponsor's regulated process.
+# ---------------------------------------------------------------------
+
+# The export package format this round defines. A verifier that
+# meets any other format string refuses it by name.
+PACKAGE_FORMAT = "pv-case-export/1"
+
+# Inventory artefact kinds a seal binds.
+SEAL_KIND_CASE = "case"
+SEAL_KIND_CODING = "coding_decision"
+SEAL_KIND_ASSESSMENT = "assessment"
+SEAL_KIND_SUMMARY = "summary"
+SEAL_KIND_REVIEW = "review_act"
+SEAL_KIND_FU_REQUEST = "follow_up_request"
+SEAL_KIND_FU_ACT = "follow_up_act"
+SEAL_KIND_EVIDENCE = "evidence_item"
+
+
+class SealedArtefact(BaseModel):
+    """One line of a seal's inventory: an artefact the seal binds,
+    by kind, id and the hash of its exact stored form. For an
+    evidence item the hash is the item's chain hash — it covers
+    the payload digest and the item's predecessor."""
+
+    artefact_kind: str  # SEAL_KIND_*
+    artefact_id: str
+    artefact_hash: str
+
+
+class CaseSeal(BaseModel):
+    """The seal over one case's file, recorded once and never
+    edited. ``chain_head_hash`` is the head of the case's evidence
+    chain at seal time — the seal's own chain item, and any later
+    export items, stand after it and are not part of the sealed
+    record. ``inventory_hash`` is a hash of the whole inventory,
+    so exactness can be checked without walking every line."""
+
+    seal_id: str
+    case_id: str
+    sealed_by: str
+    sealed_on: date
+    pack_version: str  # the sealing pack the seal was taken under
+    review_pack_version: str
+    # The review position the seal was taken from, and the acts
+    # that satisfied the gate (role -> act id), over exactly the
+    # bindings below.
+    review_state: str  # always REVIEW_STATE_REVIEWED — checked at seal time
+    accepted_acts: dict[str, str] = Field(default_factory=dict)
+    review_bindings: list[ReviewBinding] = Field(default_factory=list)
+    # The current record the gate decided, named for the verifier.
+    assessment_id: str
+    coding_decision_ids: list[str] = Field(default_factory=list)
+    dictionary_versions: list[str] = Field(default_factory=list)
+    criteria_pack_version: str
+    rsi_version: str
+    clock_pack_version: str
+    chain_head_hash: str
+    chain_items: int
+    inventory: list[SealedArtefact] = Field(default_factory=list)
+    inventory_hash: str
+
+
+class CaseExport(BaseModel):
+    """One recorded serving of a sealed case's export package.
+    The package bytes are a deterministic function of the sealed
+    inventory, so two exports of one seal carry the same
+    ``package_hash``; the records differ (exporter, date, id) and
+    each is written on the case's evidence chain."""
+
+    export_id: str
+    case_id: str
+    seal_id: str
+    exported_by: str
+    exported_on: date
+    package_format: str  # PACKAGE_FORMAT
+    package_hash: str
+
+
+def seal_refusal_text(seal: "CaseSeal", artefact: str) -> str:
+    """The refusal every service layer raises when work is
+    offered to a sealed case. One wording, everywhere: the seal
+    is named, and so is the only road left — a new case."""
+    return (
+        f"case {seal.case_id} is sealed ({seal.seal_id}, sealed by"
+        f" {seal.sealed_by} on {seal.sealed_on}) — a sealed case is"
+        f" a closed record and takes no new {artefact}; a"
+        " correction is a new case"
+    )
+
+
+class PackageCheck(BaseModel):
+    """One named check of the offline verifier, with what it
+    found. A check the package gives the verifier no way to run
+    (a missing section, an unparseable artefact) fails — absence
+    of evidence is not a pass."""
+
+    name: str
+    passed: bool
+    detail: str = ""
+
+
+class VerificationReport(BaseModel):
+    """The offline verifier's verdict on one export package: the
+    package's identity as computed (never as claimed), every
+    named check, and the overall verdict — ``pass`` only when
+    every check passes."""
+
+    package_format: str | None = None
+    case_id: str | None = None
+    seal_id: str | None = None
+    package_hash: str = ""
+    checks: list[PackageCheck] = Field(default_factory=list)
+    verdict: str = "fail"  # pass | fail
+
+
 class CodingReviewStatus(str, Enum):
     OPEN = "open"
     RESOLVED = "resolved"

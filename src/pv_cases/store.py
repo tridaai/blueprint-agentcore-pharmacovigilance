@@ -19,6 +19,8 @@ from pv_cases.migrations import apply_migrations
 from pv_cases.models import (
     Case,
     CaseAssessment,
+    CaseExport,
+    CaseSeal,
     CaseSummary,
     CodingDecision,
     CodingReviewTask,
@@ -96,6 +98,14 @@ class CaseStore(Protocol):
     # code, never written back.
     def add_review_act(self, act: MedicalReviewAct) -> None: ...
     def list_review_acts(self, case_id: str | None = None) -> list[MedicalReviewAct]: ...
+    # Round 7: seals + export records. Insert-only, like the
+    # review acts — there is deliberately no update or delete
+    # here, and no unseal: a seal is taken once and stands.
+    def add_seal(self, seal: CaseSeal) -> None: ...
+    def get_seal(self, case_id: str) -> CaseSeal | None: ...
+    def list_seals(self) -> list[CaseSeal]: ...
+    def add_export(self, export: CaseExport) -> None: ...
+    def list_exports(self, case_id: str | None = None) -> list[CaseExport]: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -651,6 +661,65 @@ class SqlCaseStore:
             )
         return [MedicalReviewAct.model_validate_json(r[0]) for r in rows]
 
+    # -- sealing + export (Round 7) ------------------------------
+    def add_seal(self, seal: CaseSeal) -> None:
+        self._run(
+            "INSERT INTO case_seals (seal_id, case_id, sealed_by, payload)"
+            " VALUES (?,?,?,?)",
+            (
+                seal.seal_id,
+                seal.case_id,
+                seal.sealed_by,
+                seal.model_dump_json(),
+            ),
+        )
+
+    def get_seal(self, case_id: str) -> CaseSeal | None:
+        row = self._run(
+            "SELECT payload FROM case_seals WHERE case_id = ?"
+            " ORDER BY seal_id LIMIT 1",
+            (case_id,),
+            fetch="one",
+        )
+        return CaseSeal.model_validate_json(row[0]) if row else None
+
+    def list_seals(self) -> list[CaseSeal]:
+        rows = self._run(
+            "SELECT payload FROM case_seals ORDER BY seal_id", fetch="all"
+        )
+        return [CaseSeal.model_validate_json(r[0]) for r in rows]
+
+    def add_export(self, export: CaseExport) -> None:
+        self._run(
+            "INSERT INTO case_exports (export_id, case_id, seal_id,"
+            " exported_by, package_hash, payload) VALUES (?,?,?,?,?,?)",
+            (
+                export.export_id,
+                export.case_id,
+                export.seal_id,
+                export.exported_by,
+                export.package_hash,
+                export.model_dump_json(),
+            ),
+        )
+
+    def list_exports(
+        self, case_id: str | None = None
+    ) -> list[CaseExport]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM case_exports ORDER BY export_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM case_exports WHERE case_id = ?"
+                " ORDER BY export_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [CaseExport.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -671,6 +740,8 @@ class InMemoryCaseStore:
         self.follow_up_requests: dict[str, FollowUpRequest] = {}
         self.follow_up_acts: dict[str, FollowUpAct] = {}
         self.review_acts: dict[str, MedicalReviewAct] = {}
+        self.seals: dict[str, CaseSeal] = {}
+        self.exports: dict[str, CaseExport] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -832,4 +903,27 @@ class InMemoryCaseStore:
         items = [self.review_acts[k] for k in sorted(self.review_acts)]
         if case_id is not None:
             items = [a for a in items if a.case_id == case_id]
+        return items
+
+    def add_seal(self, seal: CaseSeal) -> None:
+        self.seals[seal.seal_id] = seal
+
+    def get_seal(self, case_id: str) -> CaseSeal | None:
+        for seal in self.list_seals():
+            if seal.case_id == case_id:
+                return seal
+        return None
+
+    def list_seals(self) -> list[CaseSeal]:
+        return [self.seals[k] for k in sorted(self.seals)]
+
+    def add_export(self, export: CaseExport) -> None:
+        self.exports[export.export_id] = export
+
+    def list_exports(
+        self, case_id: str | None = None
+    ) -> list[CaseExport]:
+        items = [self.exports[k] for k in sorted(self.exports)]
+        if case_id is not None:
+            items = [e for e in items if e.case_id == case_id]
         return items
