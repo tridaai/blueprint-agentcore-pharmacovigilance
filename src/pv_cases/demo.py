@@ -12,7 +12,10 @@ planted seriousness/expectedness/clock fixtures graded by the three
 packs, and the clock board read a few days later. Round 5 adds the
 follow-up workflow: the requests the book's deficiencies raise, and
 one case whose missing outcome lands on day 20 — after its 7-day
-clock has already run out. Run with ``make demo``.
+clock has already run out. Round 6 adds the medical-reviewer
+gate: dual control over the assembled record, a reject that holds
+a case until the record itself changes, and the review queue.
+Run with ``make demo``.
 """
 
 from __future__ import annotations
@@ -167,6 +170,91 @@ def run_demo(out=print) -> Services:
         f" ({entry.days_remaining:+d}d) — the breach is stated,"
         " not hidden"
     )
+
+    out("-" * 62)
+    from pv_cases.models import AdverseEvent, IntakeReport, Patient, Reporter, ReportSource
+
+    out("Round 6 — medical review (dual control, in code):")
+    queue = svc.review.queue(DEMO_DAY)
+    buckets: dict[str, int] = {}
+    for entry in queue:
+        buckets[entry.bucket] = buckets.get(entry.bucket, 0) + 1
+    out(
+        "  review queue: "
+        + ", ".join(f"{b} {n}" for b, n in sorted(buckets.items()))
+    )
+    act = svc.review.record_review(
+        "CASE-RPT-2026-0001", "Dr A. Rao", "medical_reviewer",
+        "accept", "", DEMO_DAY,
+    )
+    view = svc.review.review_for_case("CASE-RPT-2026-0001")
+    out(
+        f"  {act.act_id}: medical accept by {act.reviewer}"
+        f" — case is {view.state} (missing:"
+        f" {', '.join(view.missing_roles)})"
+    )
+    svc.review.record_review(
+        "CASE-RPT-2026-0001", "Dr B. Lindqvist", "safety_reviewer",
+        "accept_with_comment", "Clock and coding verified against source.",
+        DEMO_DAY,
+    )
+    view = svc.review.review_for_case("CASE-RPT-2026-0001")
+    out(f"  safety accept recorded — case is {view.state}")
+    out("The hold: CASE-RPT-2026-0305 cannot be assessed — its")
+    out("event has no outcome. The safety reviewer rejects it:")
+    svc.review.record_review(
+        "CASE-RPT-2026-0305", "Dr B. Lindqvist", "safety_reviewer",
+        "reject_with_reason",
+        "Seriousness cannot be confirmed until the outcome is on record.",
+        DEMO_DAY,
+    )
+    svc.review.record_review(
+        "CASE-RPT-2026-0305", "Dr A. Rao", "medical_reviewer",
+        "accept", "", DEMO_DAY,
+    )
+    view = svc.review.review_for_case("CASE-RPT-2026-0305")
+    out(
+        f"  a medical accept over the same record does not clear it:"
+        f" {view.state} — {view.hold_reason}"
+    )
+    answer = IntakeReport(
+        report_id="RPT-2026-0305-FU1",
+        source=ReportSource.CALL_CENTRE,
+        received_on=date(2026, 10, 25),
+        patient=Patient(initials="H.B.", age=62, sex="M"),
+        reporter=Reporter(name="Call centre agent R. Patel", phone="+1-555-0199"),
+        suspect_product_code="NBT-101",
+        suspect_product_name="Cardivane",
+        events=[
+            AdverseEvent(
+                verbatim_term="Severe headache",
+                onset_date=date(2026, 10, 19),
+                outcome="recovered",
+                description="Recovered fully within two days;"
+                " no hospital care was needed.",
+            )
+        ],
+    )
+    svc.followup.submit_follow_up(
+        "FUP-CASE-RPT-2026-0305-A", answer, date(2026, 10, 25)
+    )
+    view = svc.review.review_for_case("CASE-RPT-2026-0305")
+    stale = sum(1 for a in view.acts if a.stale)
+    out(
+        f"  the follow-up lands the outcome; the assessment is"
+        f" rewritten — hold cleared, {stale} act(s) now stale,"
+        f" case {view.state}"
+    )
+    svc.review.record_review(
+        "CASE-RPT-2026-0305", "Dr A. Rao", "medical_reviewer",
+        "accept", "", date(2026, 10, 25),
+    )
+    svc.review.record_review(
+        "CASE-RPT-2026-0305", "Dr B. Lindqvist", "safety_reviewer",
+        "accept", "", date(2026, 10, 25),
+    )
+    view = svc.review.review_for_case("CASE-RPT-2026-0305")
+    out(f"  a fresh dual review decides the new record: {view.state}")
     return svc
 
 

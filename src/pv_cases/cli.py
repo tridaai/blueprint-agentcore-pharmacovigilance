@@ -1,6 +1,7 @@
 """Command line: ``pv-agent feed|assemble|verify|dedup|confirm|
 reject|history-*|coding*|resolve-coding|dictionary*|assess|
-assessment|clocks|rsi|follow-up*|submit-follow-up`` against the
+assessment|clocks|rsi|follow-up*|submit-follow-up|review|
+review-case|review-queue|review-pack`` against the
 configured store."""
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pv_cases.coding import CodingError
 from pv_cases.dedup import DedupDecisionError
 from pv_cases.followup import FollowUpError
 from pv_cases.models import SUBJECT_EVENT, SUBJECT_PRODUCT, IntakeReport
+from pv_cases.review import ReviewError
 from pv_cases.runtime_app import handle_invocation
 from pv_cases.wiring import build_services
 import pv_cases.runtime_app as runtime_app
@@ -28,7 +30,9 @@ USAGE = (
     "assess <case_id>|assessment <case_id>|clocks [as-of]|rsi|"
     "follow-up-board [as-of]|follow-up-tasks <case_id>|"
     "follow-up-task <task_id>|follow-up-pack|"
-    "submit-follow-up <task_id> <report-json>"
+    "submit-follow-up <task_id> <report-json>|"
+    "review <case_id> <reviewer> <role> <decision> [rationale...]|"
+    "review-case <case_id>|review-queue [as-of]|review-pack"
 )
 
 
@@ -291,6 +295,60 @@ def main(argv: list[str] | None = None) -> int:
             f"{submission.task_id}: {submission.outcome}"
             f" by {submission.follow_up_report_id} — state"
             f" {submission.state}, cycle {submission.cycle}{founded}"
+        )
+        return 0
+    if cmd == "review" and len(argv) >= 5:
+        rationale = " ".join(argv[5:])
+        try:
+            act = svc.review.record_review(
+                argv[1], argv[2], argv[3], argv[4], rationale, today
+            )
+        except KeyError:
+            print(f"no such case: {argv[1]}")
+            return 1
+        except ReviewError as exc:
+            print(f"review refused: {exc}")
+            return 1
+        view = svc.review.review_for_case(argv[1])
+        print(
+            f"{act.act_id}: {act.decision} by {act.reviewer}"
+            f" [{act.role}] — case state {view.state}"
+        )
+        return 0
+    if cmd == "review-case" and len(argv) == 2:
+        try:
+            view = svc.review.review_for_case(argv[1])
+        except KeyError:
+            print(f"no such case: {argv[1]}")
+            return 1
+        print(json.dumps(view.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "review-queue" and len(argv) <= 2:
+        from datetime import date as _date
+
+        as_of = _date.fromisoformat(argv[1]) if len(argv) == 2 else today
+        queue = svc.review.queue(as_of)
+        if not queue:
+            print(f"review queue at {as_of}: empty")
+        for entry in queue:
+            seriousness = entry.seriousness or "unassessed"
+            clock = entry.obligation_class or "no clock"
+            deadline = (
+                f", deadline {entry.deadline}" if entry.deadline else ""
+            )
+            stale = " [stale acts on trail]" if entry.has_stale_acts else ""
+            print(
+                f"{entry.case_id}: [{entry.bucket}] {seriousness},"
+                f" {clock}{deadline} — {entry.review_state}{stale}"
+            )
+        return 0
+    if cmd == "review-pack":
+        from pv_cases.review import REVIEW_PACK
+
+        print(
+            f"review pack {REVIEW_PACK['version']}: roles"
+            f" {', '.join(REVIEW_PACK['roles'])}; decisions"
+            f" {', '.join(REVIEW_PACK['decisions'])}"
         )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:

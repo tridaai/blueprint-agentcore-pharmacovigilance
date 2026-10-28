@@ -21,6 +21,8 @@ from pv_cases.coding import CodingError, CodingTaskClosed
 from pv_cases.dedup import DedupDecisionError
 from pv_cases.followup import FOLLOW_UP_PACK, FollowUpError
 from pv_cases.models import (
+    REVIEW_DECISIONS,
+    REVIEW_ROLES,
     SUBJECT_EVENT,
     SUBJECT_PRODUCT,
     DictionaryEntry,
@@ -28,6 +30,7 @@ from pv_cases.models import (
     ProductDictionaryEntry,
     is_named_human,
 )
+from pv_cases.review import REVIEW_PACK, ReviewError
 from pv_cases.runtime_app import handle_invocation
 from pv_cases.wiring import Services, build_services
 
@@ -451,6 +454,89 @@ def submit_follow_up_report(task_id: str, report: IntakeReport) -> dict:
         raise HTTPException(404, f"no such follow-up request: {task_id}")
     except FollowUpError as exc:
         raise HTTPException(409, str(exc))
+
+
+# ---------------------------------------------------------------------
+# Round 6: medical review — dual control.
+# ---------------------------------------------------------------------
+
+
+@app.get("/review/pack")
+def review_pack() -> dict:
+    """The versioned review pack: the roles, the decisions, and
+    the completion / disagreement / staleness rules every act is
+    recorded under."""
+    return REVIEW_PACK
+
+
+@app.get("/review/queue")
+def review_queue(as_of: date | None = None) -> list[dict]:
+    """The medical-review queue at ``as_of`` (default today):
+    holds, then cases awaiting a second review, then stale
+    reviews, then first reviews. Entries carry case id,
+    seriousness, clock position and review state only — no
+    patient- or reporter-identifying field."""
+    return [
+        e.model_dump(mode="json")
+        for e in svc().review.queue(as_of or date.today())
+    ]
+
+
+@app.get("/cases/{case_id}/review")
+def case_review(case_id: str) -> dict:
+    """The case's review position, derived from its acts: the
+    state, the roles holding a current accept, the hold and its
+    reason where one stands, and the full act trail with each
+    act's staleness labelled."""
+    try:
+        return svc().review.review_for_case(case_id).model_dump(mode="json")
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+
+
+@app.get("/cases/{case_id}/reviews")
+def case_reviews(case_id: str) -> list[dict]:
+    """Every review act recorded for the case, stale acts
+    included and labelled — the trail is never rewritten."""
+    try:
+        views = svc().review.list_act_views(case_id)
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [v.model_dump(mode="json") for v in views]
+
+
+class ReviewRequest(BaseModel):
+    reviewer: str
+    role: str
+    decision: str
+    rationale: str = ""
+
+
+@app.post("/cases/{case_id}/reviews")
+def record_review(case_id: str, req: ReviewRequest) -> dict:
+    """Record one reviewer's decision on the case's current
+    record. Dual control is enforced here in code: the same
+    person cannot hold a current act in both roles."""
+    if not is_named_human(req.reviewer):
+        raise HTTPException(400, "a review act needs a named human reviewer")
+    if req.role not in REVIEW_ROLES:
+        raise HTTPException(400, f"unknown reviewer role: {req.role!r}")
+    if req.decision not in REVIEW_DECISIONS:
+        raise HTTPException(400, f"unknown review decision: {req.decision!r}")
+    try:
+        act = svc().review.record_review(
+            case_id,
+            req.reviewer,
+            req.role,
+            req.decision,
+            req.rationale,
+            date.today(),
+        )
+    except KeyError:
+        raise HTTPException(404, f"no such case: {case_id}")
+    except ReviewError as exc:
+        raise HTTPException(409, str(exc))
+    return act.model_dump(mode="json")
 
 
 class AdditionRequest(BaseModel):
