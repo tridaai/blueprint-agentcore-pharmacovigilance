@@ -349,10 +349,22 @@ class CaseAssembler:
         # is set, a sealed case refuses new summaries: a sealed
         # case is a closed record.
         self.seal_lookup = None
+        # Round 8: the injection quarantine, bound by wiring —
+        # while it is set, a held field never becomes a fact, so
+        # quarantined text reaches neither a summary statement
+        # nor a model profile's prompt. This is the only road
+        # from source text to either surface, which is what makes
+        # the hold a hold.
+        self.quarantine = None
 
     # -- tools (plain functions, Strands shape) ----------------------
     def read_case_facts(self, case_id: str) -> list[dict[str, Any]]:
         facts: list[dict[str, Any]] = []
+        held = (
+            self.quarantine.held_fields(case_id)
+            if self.quarantine is not None
+            else set()
+        )
         items = self.store.list_evidence(case_id)
         coding_items = [i for i in items if i.kind == "coding"]
         latest_coding = coding_items[-1] if coding_items else None
@@ -390,6 +402,8 @@ class CaseAssembler:
                 continue
             payload = self.chain.payload_of(item)
             for field in fields:
+                if (item.item_id, field) in held:
+                    continue  # Round 8: a held field is not a fact
                 value = _dig(payload, field)
                 if value is not None:
                     facts.append({"item_id": item.item_id, "field": field, "value": value})

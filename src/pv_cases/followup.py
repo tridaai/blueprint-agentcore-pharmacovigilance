@@ -271,6 +271,10 @@ class FollowUpService:
         # is set, a sealed case refuses new follow-up requests
         # and follow-up reports: a sealed case is a closed record.
         self.seal_lookup = None
+        # Round 8: the injection quarantine, bound by wiring —
+        # while it is set, a follow-up report's free-text fields
+        # are screened the moment its payload lands on the chain.
+        self.quarantine = None
 
     def _refuse_if_sealed(self, case_id: str) -> None:
         if self.seal_lookup is not None:
@@ -576,13 +580,15 @@ class FollowUpService:
             )
         # The follow-up joins the case's chain; from here the
         # folded report of record carries its facts.
-        self.chain.append(
+        fu_item = self.chain.append(
             case_id=case_id,
             kind="follow_up_report",
             payload=report.model_dump(mode="json"),
             recorded_on=today,
             item_id=item_id,
         )
+        if self.quarantine is not None:
+            self.quarantine.screen_item(case_id, fu_item, today)
         if self.coding is not None:
             self.coding.code_case(case_id, today)
         if self.assessment is not None:
@@ -692,20 +698,26 @@ class FollowUpService:
             )
         # Provenance: the original report and this follow-up both
         # join the founded case's chain, behind the merged intake.
-        self.chain.append(
+        orig_item = self.chain.append(
             case_id=case.case_id,
             kind="original_report",
             payload=original.model_dump(mode="json"),
             recorded_on=today,
             item_id=f"EV-{case.case_id}-ORIG-{task.report_id}",
         )
-        self.chain.append(
+        fu_item = self.chain.append(
             case_id=case.case_id,
             kind="follow_up_report",
             payload=report.model_dump(mode="json"),
             recorded_on=today,
             item_id=f"EV-{case.case_id}-FU-{report.report_id}",
         )
+        if self.quarantine is not None:
+            # The merged founding payload was screened at intake;
+            # the two provenance payloads land now and are
+            # screened on the same terms.
+            self.quarantine.screen_item(case.case_id, orig_item, today)
+            self.quarantine.screen_item(case.case_id, fu_item, today)
         act = self._record_act(
             task,
             report,

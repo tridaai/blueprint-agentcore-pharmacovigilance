@@ -51,6 +51,11 @@ class IntakeService:
         # request naming the missing fields, and every new case is
         # scanned for deficiencies a follow-up report can cure.
         self.followup = None
+        # Round 8: the injection quarantine, bound by the wiring.
+        # When bound, the report's free-text fields are screened
+        # the moment its payload lands on the new case's chain —
+        # before any consumer can draft from them.
+        self.quarantine = None
         # Round 2: when a dedup service is wired, every new case is
         # assessed against the stored book before ingest returns —
         # a duplicate finding is a link + a human queue item, never
@@ -100,13 +105,15 @@ class IntakeService:
             suspected_duplicate_of=existing.case_id if existing else None,
         )
         self.store.add_case(case)
-        self.chain.append(
+        intake_item = self.chain.append(
             case_id=case_id,
             kind="intake_report",
             payload=payload,
             recorded_on=today,
             item_id=f"EV-{case_id}-001",
         )
+        if self.quarantine is not None:
+            self.quarantine.screen_item(case_id, intake_item, today)
         if self.dedup is not None:
             self.dedup.scan_case(case_id, today)
             # The scan may have marked this case duplicate_linked.
