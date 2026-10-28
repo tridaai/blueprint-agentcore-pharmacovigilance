@@ -26,6 +26,8 @@ from pv_cases.models import (
     DedupLink,
     DictionaryVersion,
     EvidenceItem,
+    FollowUpAct,
+    FollowUpRequest,
     FollowUpTask,
     PatientHistoryView,
     ProductHistoryView,
@@ -78,6 +80,15 @@ class CaseStore(Protocol):
     def list_rsi_versions(self) -> list[ReferenceSafetyInfo]: ...
     def add_assessment(self, assessment: CaseAssessment) -> None: ...
     def list_assessments(self, case_id: str | None = None) -> list[CaseAssessment]: ...
+    # Round 5: follow-up workflow requests + acts. Insert-only,
+    # like the dictionary and the assessments — there is
+    # deliberately no update or delete here; a request's state is
+    # derived from its acts in code, never written back.
+    def add_follow_up_request(self, request) -> None: ...
+    def get_follow_up_request(self, task_id: str): ...
+    def list_follow_up_requests(self, case_id: str | None = None) -> list: ...
+    def add_follow_up_act(self, act) -> None: ...
+    def list_follow_up_acts(self, task_id: str | None = None) -> list: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -541,6 +552,67 @@ class SqlCaseStore:
             )
         return [CaseAssessment.model_validate_json(r[0]) for r in rows]
 
+    # -- follow-up workflow (Round 5) -------------------------------
+    def add_follow_up_request(self, request: FollowUpRequest) -> None:
+        self._run(
+            "INSERT INTO follow_up_requests (task_id, case_id, report_id,"
+            " source, payload) VALUES (?,?,?,?,?)",
+            (
+                request.task_id,
+                request.case_id,
+                request.report_id,
+                request.source,
+                request.model_dump_json(),
+            ),
+        )
+
+    def get_follow_up_request(self, task_id: str) -> FollowUpRequest | None:
+        row = self._run(
+            "SELECT payload FROM follow_up_requests WHERE task_id = ?",
+            (task_id,),
+            fetch="one",
+        )
+        return FollowUpRequest.model_validate_json(row[0]) if row else None
+
+    def list_follow_up_requests(
+        self, case_id: str | None = None
+    ) -> list[FollowUpRequest]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM follow_up_requests ORDER BY task_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM follow_up_requests WHERE case_id = ?"
+                " ORDER BY task_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [FollowUpRequest.model_validate_json(r[0]) for r in rows]
+
+    def add_follow_up_act(self, act: FollowUpAct) -> None:
+        self._run(
+            "INSERT INTO follow_up_acts (act_id, task_id, kind, payload)"
+            " VALUES (?,?,?,?)",
+            (act.act_id, act.task_id, act.kind, act.model_dump_json()),
+        )
+
+    def list_follow_up_acts(self, task_id: str | None = None) -> list[FollowUpAct]:
+        if task_id is None:
+            rows = self._run(
+                "SELECT payload FROM follow_up_acts ORDER BY act_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM follow_up_acts WHERE task_id = ?"
+                " ORDER BY act_id",
+                (task_id,),
+                fetch="all",
+            )
+        return [FollowUpAct.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -558,6 +630,8 @@ class InMemoryCaseStore:
         self.coding_tasks: dict[str, CodingReviewTask] = {}
         self.rsi_versions: dict[str, ReferenceSafetyInfo] = {}
         self.assessments: dict[str, CaseAssessment] = {}
+        self.follow_up_requests: dict[str, FollowUpRequest] = {}
+        self.follow_up_acts: dict[str, FollowUpAct] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -685,4 +759,27 @@ class InMemoryCaseStore:
         items = [self.assessments[k] for k in sorted(self.assessments)]
         if case_id is not None:
             items = [a for a in items if a.case_id == case_id]
+        return items
+
+    def add_follow_up_request(self, request: FollowUpRequest) -> None:
+        self.follow_up_requests[request.task_id] = request
+
+    def get_follow_up_request(self, task_id: str) -> FollowUpRequest | None:
+        return self.follow_up_requests.get(task_id)
+
+    def list_follow_up_requests(
+        self, case_id: str | None = None
+    ) -> list[FollowUpRequest]:
+        items = [self.follow_up_requests[k] for k in sorted(self.follow_up_requests)]
+        if case_id is not None:
+            items = [r for r in items if r.case_id == case_id]
+        return items
+
+    def add_follow_up_act(self, act: FollowUpAct) -> None:
+        self.follow_up_acts[act.act_id] = act
+
+    def list_follow_up_acts(self, task_id: str | None = None) -> list[FollowUpAct]:
+        items = [self.follow_up_acts[k] for k in sorted(self.follow_up_acts)]
+        if task_id is not None:
+            items = [a for a in items if a.task_id == task_id]
         return items

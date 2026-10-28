@@ -663,6 +663,157 @@ class ReferenceSafetyInfo(BaseModel):
     products: dict[str, list[LabelledTerm]] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------
+# Round 5: the follow-up workflow.
+#
+# A *follow-up request* is the workflow task the system raises when
+# a report or a case is missing a fact only a follow-up report can
+# supply: a validity criterion (the R1 task's missing list, made
+# specific), a codable wording for an uncoded event, or the fact an
+# assessment names as absent. It is a distinct artefact from the
+# R1 ``FollowUpTask`` — that one is the intake record of an invalid
+# report; this one is the tracked work, with a due date from a
+# versioned pack and a lifecycle.
+#
+# Requests and their acts are both insert-only artefacts. A request
+# never changes in place: a follow-up report answering it is
+# recorded as an *act* (an attempt that rolls the due date forward,
+# a resolution, or an escalation at the pack's cycle cap), and the
+# request's current state is derived from its acts in code.
+# ---------------------------------------------------------------------
+
+# Follow-up request sources.
+FU_SOURCE_VALIDITY = "validity"
+FU_SOURCE_CODING = "coding"
+FU_SOURCE_ASSESSMENT = "assessment"
+
+# Missing-item classes (MissingItem.item_class). The follow-up pack
+# prices a due date per class; a request's governing days are the
+# slowest class among its items. The validity classes reuse the
+# gate's criterion names.
+FU_CLASS_UNCODED_EVENT = "uncoded_event"
+FU_CLASS_MISSING_FACT = "missing_case_fact"
+
+# Follow-up act kinds.
+FU_ACT_ATTEMPT = "attempt"
+FU_ACT_RESOLUTION = "resolution"
+FU_ACT_ESCALATION = "escalation"
+
+# Derived task states. ``overdue`` is an open task read after its
+# current due date; ``escalated`` is the named state a task lands
+# in when its last allowed cycle fails — handed to a human queue,
+# never silently dropped.
+FU_STATE_OPEN = "open"
+FU_STATE_OVERDUE = "overdue"
+FU_STATE_RESOLVED = "resolved"
+FU_STATE_ESCALATED = "escalated"
+
+
+class MissingItem(BaseModel):
+    """One fact a follow-up report must supply, named exactly: the
+    field it lands in, the class the pack prices it under, and a
+    detail sentence stating what is needed and why. A follow-up
+    request is a list of these — never a generic "more info
+    needed"."""
+
+    item_class: str
+    field: str
+    detail: str
+    # What this absence blocks: criterion names for assessment
+    # items, ["coding"] for an uncoded event, the criterion itself
+    # for a validity item.
+    blocks: list[str] = Field(default_factory=list)
+    event_index: int | None = None
+    verbatim: str | None = None  # coding items: the term as reported
+
+
+class FollowUpRequest(BaseModel):
+    """One follow-up workflow task. ``case_id`` is None only for a
+    validity request, whose report has no case yet; the case it
+    creates is named by its resolution act. ``due_on`` is the
+    cycle-1 due date — later cycles' due dates live on the
+    attempt acts, and the current due date is derived."""
+
+    task_id: str
+    source: str  # FU_SOURCE_*
+    report_id: str  # the report whose deficiency raised this task
+    case_id: str | None = None
+    subject_index: int | None = None  # coding requests: the event index
+    decision_id: str | None = None  # coding requests: the raising decision
+    items: list[MissingItem] = Field(default_factory=list)
+    pack_version: str
+    class_days: int  # the governing (slowest) class's days
+    raised_on: date
+    due_on: date
+
+
+class FollowUpAct(BaseModel):
+    """One recorded answer to a follow-up request: the follow-up
+    report that arrived, the cycle it answered, and what it did —
+    resolved the request, rolled it into its next cycle with a new
+    due date, or escalated it at the cycle cap. A resolution of a
+    validity request names the case the follow-up created."""
+
+    act_id: str
+    task_id: str
+    kind: str  # FU_ACT_*
+    follow_up_report_id: str
+    case_id: str | None = None
+    cycle: int
+    new_due_on: date | None = None
+    recorded_on: date
+    detail: str = ""
+
+
+class FollowUpTaskView(BaseModel):
+    """A request read at an explicit ``as_of``: the stored artefact
+    plus the state, cycle and due date derived from its acts.
+    ``days_overdue`` is 0 unless the task stands open past its
+    current due date — ageing is a read-time derivation, like the
+    clock board's."""
+
+    task: FollowUpRequest
+    state: str
+    cycle: int
+    due_on: date
+    days_overdue: int = 0
+    # The case the task belongs to: its own case, or (for a
+    # resolved validity request) the case its follow-up created.
+    case_id: str | None = None
+    acts: list[FollowUpAct] = Field(default_factory=list)
+
+
+class FollowUpBoardEntry(BaseModel):
+    """One row of the follow-up board at an ``as_of``: unresolved
+    work first (escalated, then most-overdue), each entry naming
+    the exact fields still missing."""
+
+    task_id: str
+    source: str
+    case_id: str | None = None
+    report_id: str
+    state: str
+    cycle: int
+    due_on: date
+    days_overdue: int = 0
+    missing_fields: list[str] = Field(default_factory=list)
+
+
+class FollowUpSubmission(BaseModel):
+    """The recorded outcome of one follow-up report submission."""
+
+    task_id: str
+    follow_up_report_id: str
+    act_id: str
+    outcome: str  # the act kind recorded: attempt | resolution | escalation
+    state: str  # the task's state after the act
+    cycle: int  # the task's cycle after the act
+    due_on: date  # the task's current due date after the act
+    case_id: str | None = None
+    new_case_id: str | None = None  # set when a validity follow-up created the case
+    links_created: list[str] = Field(default_factory=list)
+
+
 class CodingReviewStatus(str, Enum):
     OPEN = "open"
     RESOLVED = "resolved"
