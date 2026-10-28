@@ -174,6 +174,69 @@ programme.
   coder resolutions, recodes, dictionary version reads and
   additions; migration `0003` in both dialects.
 
+## What Round 4 adds
+
+- **A seriousness engine over a versioned criteria pack**
+  (`pv_cases/assessment.py`): the six ICH seriousness criteria —
+  death, life-threatening, hospitalisation, disability,
+  congenital anomaly, other medically important — evaluated in
+  code against the case's coded facts and outcome fields. Every
+  criterion is recorded **fired**, **not fired**, or
+  **cannot assess**, and each non-silent verdict names the fact
+  that decided it. A criterion whose deciding fact is absent is
+  `cannot_assess` naming the missing fact — **silence is never
+  read as safety**, so a case with any unassessable criterion and
+  none fired is itself `cannot_assess`, never "non-serious".
+- **Expectedness against reference safety information**: a
+  versioned RSI extract, per product, of the labelled event
+  terms at their stated specificity. **The RSI is a repo-built
+  stand-in for the products' real labels** — a small original
+  extract written for this blueprint, not a real label and not
+  licensed data. A coded event is `expected` when it matches a
+  labelled term, and `unexpected` when it is not in the label —
+  **including the classic trap**: an event coded to a term more
+  severe or more specific than the labelled term (a vesicular
+  rash, where the label lists "Rash") is unexpected even though
+  its base term is labelled. An uncoded event, or an event on an
+  unidentified product, is `cannot_assess`, named.
+- **Regulatory clocks, computed in code**: from the case's day
+  zero — **the first valid receipt date, which never moves** —
+  plus seriousness and expectedness, a versioned clock pack
+  computes the obligation class: 7-day expedited for serious +
+  unexpected with death or life-threatening fired, 15-day
+  expedited for other serious + unexpected, periodic otherwise,
+  and `awaiting_assessment` while either verdict is unassessable
+  (no obligation is computed from unassessed facts). The
+  deadline **date** is computed and stored on the artefact;
+  clock *state* (within clock / due today / breached, days
+  remaining) is derived at read time from an explicit `as_of`,
+  never stored.
+- **Assessments are stored artefacts, insert-only**: each
+  `CaseAssessment` is pinned to the case, the report fingerprint
+  it read, the current coding decision ids, and the three pack
+  versions (criteria, RSI, clock). Re-assessing over unchanged
+  inputs writes nothing; when a case's facts move — a coder
+  settles an uncoded term, say — the new assessment **supersedes
+  by link** with the change recorded (verdicts and obligation,
+  before → after) and day zero unchanged. Nothing is ever
+  submitted to a regulator: the clock states an obligation; the
+  sponsor's regulated process discharges it.
+- **Consumers**: intake assesses every case after coding; the
+  assembler captures the current assessment on the evidence
+  chain and the summary presents seriousness, expectedness and
+  the clock with citations to the deciding facts — a summary
+  stating a verdict, obligation class or deadline different
+  from the current artefact is **refused in code**, on the same
+  wholesale terms as an unresolvable citation.
+- **Planted assessment fixtures**, graded in tests and evals:
+  one case per criterion shape, the specificity trap, uncoded
+  and unidentified-product `cannot_assess` cases, and clock
+  fixtures graded to the day (day zero + 7 / + 15, breach
+  detection at an `as_of` past the deadline).
+- **API + CLI parity** for the per-case assessment read and
+  trail, the re-assessment act, the clock board and the RSI
+  reads; migration `0004` in both dialects.
+
 ## Quick start
 
 ```bash
@@ -191,25 +254,38 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 3 of 20.** Built and gate-green: everything in Rounds
-  1–2, plus dictionary coding — the tiered lookup with recorded
-  match paths, pinned `CodingDecision` artefacts, the uncoded
-  review queue with named coder resolutions, dictionary additions
-  as new versions only, history views and summaries consuming the
-  coding layer, migration 0003, and API/CLI parity for all of it.
-  Round 2 shipped: the dedup rule pack with human link decisions,
-  patient and product history views consumed by the assembler,
-  migration 0002. Round 1 shipped: models + validity gate, intake
-  + feed, evidence chain, store + migration 0001, Runtime
-  entrypoint, agent step with cited summaries, API, demo, evals.
+- **Round 4 of 20.** Built and gate-green: everything in Rounds
+  1–3, plus the assessment layer — the versioned seriousness
+  criteria pack with cannot-assess-never-assumed-negative
+  semantics, expectedness against the RSI stand-in with the
+  specificity trap graded, the clock pack computing obligation
+  classes and deadline dates from an unmoving day zero,
+  insert-only `CaseAssessment` artefacts superseding by link
+  with the change recorded, summaries presenting the verdicts
+  under a code-enforced presentation check, migration 0004, and
+  API/CLI parity for all of it. Round 3 shipped: dictionary
+  coding — the tiered lookup with recorded match paths, pinned
+  `CodingDecision` artefacts, the uncoded review queue with named
+  coder resolutions, dictionary additions as new versions only,
+  history views and summaries consuming the coding layer,
+  migration 0003. Round 2 shipped: the dedup rule pack with
+  human link decisions, patient and product history views
+  consumed by the assembler, migration 0002. Round 1 shipped:
+  models + validity gate, intake + feed, evidence chain, store +
+  migration 0001, Runtime entrypoint, agent step with cited
+  summaries, API, demo, evals.
 - **The dictionary is a repo-built extract, not licensed
   MedDRA** — a reduced, original terminology written for this
   blueprint (12 event entries, 3 product entries at version
   `2026.10.1`). Coding against the real dictionary is a licensing
   and integration step this blueprint deliberately does not fake.
-- **The seriousness engine is Round 4** — no seriousness,
-  expectedness or causality judgement of any kind is made yet;
-  coded facts are staged for it.
+- **The reference safety information is a repo-built stand-in**
+  — a small original extract written for this blueprint (three
+  products at version `2026.10.1`), **not the products' real
+  labels**. Expectedness against a real label is a licensing and
+  integration step this blueprint deliberately does not fake.
+  Causality assessment is not part of this blueprint's verdicts;
+  seriousness and expectedness are the computed judgements.
 - **No regulator submission ever** — not in this round, not in any
   round. The system ends at an approved, exportable case file; what
   a sponsor does with it is the sponsor's regulated process.

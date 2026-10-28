@@ -88,6 +88,16 @@ other blueprints already cover the LangGraph pattern.
    an uncoded term as coded is refused in code. Dictionary
    versions and coding decisions are insert-only artefacts — a
    dictionary change is a new version, never an edit.
+8. (R4) Seriousness, expectedness and the reporting clocks are
+   computed in code from versioned packs, never narrated by the
+   model: criteria fire, do not fire, or cannot be assessed
+   (absence is never read as negative); expectedness grades
+   against the RSI stand-in with the specificity rule stated;
+   the clock's day zero is the first valid receipt date and
+   never moves. Assessments are insert-only artefacts pinned to
+   the coding decisions they read; a changed case supersedes by
+   link with the change recorded, and a summary misstating the
+   current artefact's verdicts or deadline is refused in code.
 
 ## Round map
 

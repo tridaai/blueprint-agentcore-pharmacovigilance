@@ -45,3 +45,15 @@ def coded(full) -> Services:
     for report in coding_fixtures():
         full.intake.ingest(report, DAY)
     return full
+
+
+@pytest.fixture()
+def assessed(coded) -> Services:
+    """The coded book plus Round 4's assessment fixtures — one
+    case per seriousness / expectedness / clock shape the three
+    packs must grade."""
+    from pv_cases.seed import assessment_fixtures
+
+    for report in assessment_fixtures():
+        coded.intake.ingest(report, DAY)
+    return coded

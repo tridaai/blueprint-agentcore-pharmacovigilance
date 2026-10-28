@@ -1,4 +1,4 @@
-"""Eval gate — Rounds 1–3 (pharmacovigilance case agent).
+"""Eval gate — Rounds 1–4 (pharmacovigilance case agent).
 
 Runs the planted feed through the real service graph on a throwaway
 SQLite store and grades the guarantees. Every counter is
@@ -65,6 +65,38 @@ reference feed, the dedup fixtures and the coding fixtures:
                                  or a decision pinned to the old
                                  version moving
 
+Round 4 (seriousness + expectedness + regulatory clocks), graded
+over the full book plus the assessment fixtures:
+  seriousness_misclassifications a case's stored seriousness
+                                 verdict, or any criterion's
+                                 fired / not-fired status, differing
+                                 from the planted truth
+  assumed_negative_criteria      a criterion recorded not-fired
+                                 whose planted truth is
+                                 cannot-assess (silence read as
+                                 safety), or a non-serious verdict
+                                 standing over an unassessable
+                                 criterion
+  expectedness_misclassifications a case's stored expectedness
+                                 verdict, or a graded event's
+                                 status / basis, differing from the
+                                 planted truth — the specificity
+                                 trap and the uncoded cases included
+  deadline_errors                an obligation class, day zero or
+                                 deadline date differing from the
+                                 planted truth (day zero is always
+                                 the first valid receipt date), a
+                                 clock-board state disagreeing with
+                                 its artefact at a graded as_of, or
+                                 a superseding assessment moving
+                                 day zero
+  stale_clock_presentations_accepted a stored summary whose
+                                 seriousness / expectedness / clock
+                                 statements disagree with the
+                                 current assessment artefact, or
+                                 that lacks the assessment
+                                 statements entirely
+
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
 
@@ -77,6 +109,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from pv_cases.assessment import assessment_presentation_problems  # noqa: E402
 from pv_cases.coding import coding_presentation_problems  # noqa: E402
 from pv_cases.config import Settings  # noqa: E402
 from pv_cases.models import (  # noqa: E402
@@ -84,7 +117,12 @@ from pv_cases.models import (  # noqa: E402
     CaseStatus,
     DedupBand,
 )
-from pv_cases.seed import coding_fixtures, dedup_fixtures, reference_feed  # noqa: E402
+from pv_cases.seed import (  # noqa: E402
+    assessment_fixtures,
+    coding_fixtures,
+    dedup_fixtures,
+    reference_feed,
+)
 from pv_cases.validity import assess_validity  # noqa: E402
 from pv_cases.wiring import Services  # noqa: E402
 
@@ -371,6 +409,233 @@ def main() -> int:
         presented += 0 if any(t.startswith(marker) for t in texts) else 1
     counters["uncoded_presented_as_coded"] = presented
 
+    # ---------------- Round 4: assessment ----------------
+    # Seriousness, expectedness and the regulatory clocks, graded
+    # over the full book plus the assessment fixtures against
+    # hand-derived truth. This section runs BEFORE the dictionary
+    # addition below on purpose: that block recodes CASE-0203,
+    # and the verdicts graded here are the ones standing over the
+    # dictionary version the cases were born under.
+    for report in assessment_fixtures():
+        svc.intake.ingest(report, DAY)
+        reports_by_case[f"CASE-{report.report_id}"] = report
+
+    CRITERIA = (
+        "death",
+        "life_threatening",
+        "hospitalisation",
+        "disability",
+        "congenital_anomaly",
+        "other_medically_important",
+    )
+    F, N, CA = "fired", "not_fired", "cannot_assess"
+
+    def crit(**overrides):
+        base = {name: N for name in CRITERIA}
+        base.update(overrides)
+        return base
+
+    OMI = "other_medically_important"
+    # case -> (seriousness, criteria, expectedness, obligation)
+    ASSESS_TRUTH = {
+        f"{C}0001": ("non_serious", crit(), "expected", "periodic"),
+        f"{C}0002": ("non_serious", crit(), "expected", "periodic"),
+        f"{C}0005": ("serious", crit(**{OMI: F}), "unexpected", "expedited_15_day"),
+        f"{C}0006": ("serious", crit(**{OMI: F}), "unexpected", "expedited_15_day"),
+        f"{C}0101": ("non_serious", crit(), "expected", "periodic"),
+        f"{C}0102": (
+            "cannot_assess",
+            crit(**{OMI: CA, "congenital_anomaly": CA}),
+            "cannot_assess",
+            "awaiting_assessment",
+        ),
+        f"{C}0103": ("non_serious", crit(), "unexpected", "periodic"),
+        f"{C}0104": ("serious", crit(**{OMI: F}), "unexpected", "expedited_15_day"),
+        f"{C}0105": ("serious", crit(**{OMI: F}), "unexpected", "expedited_15_day"),
+        f"{C}0106": ("non_serious", crit(), "expected", "periodic"),
+        f"{C}0201": ("serious", crit(**{OMI: F}), "unexpected", "expedited_15_day"),
+        f"{C}0202": ("serious", crit(**{OMI: F}), "unexpected", "expedited_15_day"),
+        f"{C}0203": (
+            "cannot_assess",
+            crit(**{OMI: CA, "congenital_anomaly": CA}),
+            "cannot_assess",
+            "awaiting_assessment",
+        ),
+        f"{C}0204": (
+            "cannot_assess",
+            crit(**{OMI: CA, "congenital_anomaly": CA}),
+            "cannot_assess",
+            "awaiting_assessment",
+        ),
+        f"{C}0205": ("non_serious", crit(), "cannot_assess", "awaiting_assessment"),
+        f"{C}0206": ("non_serious", crit(), "unexpected", "periodic"),
+        f"{C}0301": ("serious", crit(death=F), "unexpected", "expedited_7_day"),
+        f"{C}0302": (
+            "serious",
+            crit(hospitalisation=F, **{OMI: F}),
+            "unexpected",
+            "expedited_15_day",
+        ),
+        f"{C}0303": ("serious", crit(hospitalisation=F), "expected", "periodic"),
+        f"{C}0304": ("non_serious", crit(), "expected", "periodic"),
+        f"{C}0305": (
+            "cannot_assess",
+            crit(death=CA, hospitalisation=CA, disability=CA),
+            "expected",
+            "awaiting_assessment",
+        ),
+        f"{C}0306": (
+            "cannot_assess",
+            crit(**{OMI: CA}),
+            "cannot_assess",
+            "awaiting_assessment",
+        ),
+        f"{C}0307": (
+            "serious",
+            crit(life_threatening=F),
+            "unexpected",
+            "expedited_7_day",
+        ),
+        f"{C}0308": ("serious", crit(disability=F), "expected", "periodic"),
+        f"{C}0309": (
+            "serious",
+            crit(congenital_anomaly=F),
+            "expected",
+            "periodic",
+        ),
+    }
+    # Event-level expectedness truth for the traps: (status, basis).
+    EVENT_TRUTH = {
+        f"{C}0005": ("unexpected", "more_specific_than_labelled"),
+        f"{C}0102": ("cannot_assess", "event_uncoded"),
+        f"{C}0103": ("unexpected", "not_in_label"),
+        f"{C}0201": ("unexpected", "not_in_label"),
+        f"{C}0205": ("cannot_assess", "product_not_identified"),
+        f"{C}0206": ("unexpected", "not_in_label"),
+        f"{C}0301": ("unexpected", "not_in_label"),
+        f"{C}0302": ("unexpected", "more_specific_than_labelled"),
+        f"{C}0304": ("expected", "labelled_term"),
+        f"{C}0306": ("cannot_assess", "event_uncoded"),
+    }
+    # Explicit deadline pins (day zero + 7 / + 15, to the day).
+    DEADLINE_PINS = {
+        f"{C}0005": "2026-10-25",
+        f"{C}0301": "2026-10-21",
+        f"{C}0302": "2026-10-31",
+        f"{C}0307": "2026-10-27",
+    }
+
+    seriousness_wrong = 0
+    assumed_negative = 0
+    expectedness_wrong = 0
+    deadline_wrong = 0
+    for case_id, (seriousness, criteria, expectedness, obligation) in (
+        ASSESS_TRUTH.items()
+    ):
+        artefact = svc.assessment.current_assessment(case_id)
+        if artefact is None:
+            seriousness_wrong += 1
+            expectedness_wrong += 1
+            deadline_wrong += 1
+            continue
+        seriousness_wrong += artefact.seriousness.value != seriousness
+        stored = {f.criterion: f.status.value for f in artefact.criteria}
+        for name, status in criteria.items():
+            if stored.get(name) != status:
+                if status == CA and stored.get(name) == N:
+                    assumed_negative += 1
+                else:
+                    seriousness_wrong += 1
+        if seriousness == "non_serious" and any(
+            f.status.value == CA for f in artefact.criteria
+        ):
+            assumed_negative += 1
+        expectedness_wrong += artefact.expectedness.value != expectedness
+        if case_id in EVENT_TRUTH:
+            (entry,) = artefact.event_expectedness
+            expectedness_wrong += (entry.status.value, entry.basis) != EVENT_TRUTH[
+                case_id
+            ]
+        # The clock: class, day zero (always the first valid
+        # receipt date) and the deadline arithmetic to the day.
+        case = svc.store.get_case(case_id)
+        clock = artefact.clock
+        deadline_wrong += clock.obligation_class != obligation
+        deadline_wrong += clock.day_zero != case.received_on
+        deadline_wrong += clock.day_zero != case.awareness_date
+        if obligation == "expedited_7_day":
+            from datetime import timedelta
+
+            deadline_wrong += clock.deadline != clock.day_zero + timedelta(days=7)
+        elif obligation == "expedited_15_day":
+            from datetime import timedelta
+
+            deadline_wrong += clock.deadline != clock.day_zero + timedelta(days=15)
+        else:
+            deadline_wrong += clock.deadline is not None
+        if case_id in DEADLINE_PINS:
+            deadline_wrong += (
+                clock.deadline is None
+                or clock.deadline.isoformat() != DEADLINE_PINS[case_id]
+            )
+    counters["seriousness_misclassifications"] = seriousness_wrong
+    counters["assumed_negative_criteria"] = assumed_negative
+    counters["expectedness_misclassifications"] = expectedness_wrong
+
+    # The clock board read at a graded date: the fatal case has
+    # breached, the hospital case is mid-clock, the unassessable
+    # case waits — and every entry agrees with its artefact.
+    board = {e.case_id: e for e in svc.assessment.clock_board(date(2026, 10, 22))}
+    deadline_wrong += (board[f"{C}0301"].state, board[f"{C}0301"].days_remaining) != (
+        "breached",
+        -1,
+    )
+    deadline_wrong += (board[f"{C}0302"].state, board[f"{C}0302"].days_remaining) != (
+        "within_clock",
+        9,
+    )
+    deadline_wrong += board[f"{C}0305"].state != "awaiting_assessment"
+    deadline_wrong += board[f"{C}0305"].days_remaining is not None
+    counters["deadline_errors"] = deadline_wrong
+
+    # Every stored summary must present the assessment exactly as
+    # the current artefact states it — verdicts, class, deadline.
+    stale = 0
+    for case in svc.store.list_cases():
+        summary = svc.assembler.assemble(case.case_id, DAY)
+        current = svc.assessment.current_assessment(case.case_id)
+        stale += len(assessment_presentation_problems(current, summary.statements))
+        prefixes = ("Seriousness:", "Expectedness:", "Reporting clock:")
+        texts = [s.text for s in summary.statements]
+        stale += sum(
+            0 if any(t.startswith(p) for t in texts) else 1 for p in prefixes
+        )
+    counters["stale_clock_presentations_accepted"] = stale
+
+    # A case that becomes assessable supersedes: the coder settles
+    # CASE-0204's ambiguous term, the new artefact records the
+    # change, day zero does not move, and a fresh summary speaks
+    # the new verdict.
+    case_id = f"{C}0204"
+    first = svc.assessment.current_assessment(case_id)
+    task = next(t for t in svc.coding.uncoded_queue() if t.case_id == case_id)
+    svc.coding.resolve(task.task_id, "Eval Coder", DAY, preferred_term="Fatigue")
+    second = svc.assessment.assess_case(case_id, DAY)
+    counters["seriousness_misclassifications"] += (
+        second.supersedes_id != first.assessment_id
+        or second.change
+        != {
+            "seriousness": ["cannot_assess", "non_serious"],
+            "expectedness": ["cannot_assess", "expected"],
+            "obligation_class": ["awaiting_assessment", "periodic"],
+        }
+    )
+    counters["deadline_errors"] += second.clock.day_zero != date(2026, 10, 21)
+    fresh = svc.assembler.assemble(case_id, DAY)
+    counters["stale_clock_presentations_accepted"] += len(
+        assessment_presentation_problems(second, fresh.statements)
+    )
+
     # Dictionary immutability: the port grows no in-place edit for
     # versions or decisions, an addition leaves the stored base
     # version and its pinned decisions untouched, and a recode
@@ -418,7 +683,7 @@ def main() -> int:
     edits += settled.supersedes_id != pinned_before["decision_id"]
     counters["dictionary_in_place_edits"] = edits
 
-    print("Rounds 1–3 evals — pharmacovigilance case agent")
+    print("Rounds 1–4 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]
