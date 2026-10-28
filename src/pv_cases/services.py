@@ -40,7 +40,7 @@ class IntakeOutcome:
 
 
 class IntakeService:
-    def __init__(self, store, objects: ObjectStore, dedup=None, coding=None):
+    def __init__(self, store, objects: ObjectStore, dedup=None, coding=None, assessment=None):
         self.store = store
         self.objects = objects
         self.chain = EvidenceChain(store, objects)
@@ -54,6 +54,12 @@ class IntakeService:
         # ingest returns — the workflow order of the design brief:
         # validity, de-duplication, then coding.
         self.coding = coding
+        # Round 4: when an assessment service is wired, every new
+        # case is assessed (seriousness, expectedness, clock)
+        # against its coded facts before ingest returns — the
+        # brief's workflow order: coding, then the seriousness
+        # engine, then expectedness and the clocks.
+        self.assessment = assessment
 
     def ingest(self, report: IntakeReport, today: date) -> IntakeOutcome:
         assessment = assess_validity(report)
@@ -98,6 +104,8 @@ class IntakeService:
             case = self.store.get_case(case_id)
         if self.coding is not None:
             self.coding.code_case(case_id, today)
+        if self.assessment is not None:
+            self.assessment.assess_case(case_id, today)
         return IntakeOutcome(report.report_id, case, None)
 
     def ingest_feed(self, reports: list[IntakeReport], today: date) -> list[IntakeOutcome]:

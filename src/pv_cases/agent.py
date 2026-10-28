@@ -119,6 +119,79 @@ class OfflineComposer:
         return statements
 
 
+def _render_seriousness(assessment: dict[str, Any]) -> str:
+    """One summary statement for the assessment's seriousness
+    verdict. The wording is the claim the presentation check in
+    :mod:`pv_cases.assessment` grades every summary against."""
+    outcome = assessment["seriousness"]
+    if outcome == "serious":
+        fired = [
+            f["criterion"].replace("_", " ")
+            for f in assessment["criteria"]
+            if f["status"] == "fired"
+        ]
+        return f"Seriousness: serious (criteria fired: {', '.join(fired)})."
+    if outcome == "non_serious":
+        return "Seriousness: non-serious (no criterion fired)."
+    missing = [
+        f["missing_fact"]
+        for f in assessment["criteria"]
+        if f["status"] == "cannot_assess" and f.get("missing_fact")
+    ]
+    return f"Seriousness: cannot be assessed (missing: {', '.join(missing)})."
+
+
+def _render_expectedness(assessment: dict[str, Any]) -> str:
+    outcome = assessment["expectedness"]
+    if outcome == "expected":
+        return (
+            "Expectedness: expected (every coded event is labelled"
+            " in the reference safety information)."
+        )
+    if outcome == "unexpected":
+        bad = next(
+            e for e in assessment["event_expectedness"] if e["status"] == "unexpected"
+        )
+        if bad["basis"] == "more_specific_than_labelled":
+            return (
+                f"Expectedness: unexpected (event {bad['event_index']}:"
+                f" {bad['preferred_term']} is more specific than the"
+                f" labelled term {bad['labelled_term']})."
+            )
+        return (
+            f"Expectedness: unexpected (event {bad['event_index']}:"
+            f" {bad['preferred_term']} is not in the reference safety"
+            " information)."
+        )
+    bad = next(
+        e
+        for e in assessment["event_expectedness"]
+        if e["status"] == "cannot_assess"
+    )
+    return (
+        f"Expectedness: cannot be assessed (event {bad['event_index']}:"
+        f" {bad['basis'].replace('_', ' ')})."
+    )
+
+
+def _render_clock(assessment: dict[str, Any]) -> str:
+    clock = assessment["clock"]
+    cls = clock["obligation_class"]
+    if cls == "expedited_7_day":
+        return (
+            f"Reporting clock: 7-day expedited — deadline {clock['deadline']}"
+            f" (day zero {clock['day_zero']})."
+        )
+    if cls == "expedited_15_day":
+        return (
+            f"Reporting clock: 15-day expedited — deadline {clock['deadline']}"
+            f" (day zero {clock['day_zero']})."
+        )
+    if cls == "periodic":
+        return "Reporting clock: periodic (no expedited deadline)."
+    return "Reporting clock: awaiting assessment (no deadline computed)."
+
+
 def _render_coding(decision: dict[str, Any]) -> str:
     """One summary statement for one coding decision. A coded term
     is presented as coded, with its label; an uncoded term is
@@ -149,6 +222,12 @@ def _render_fact(fact: dict[str, Any]) -> str | None:
         return None
     if field.startswith("coding.") and isinstance(value, dict):
         return _render_coding(value)
+    if field == "assessment.seriousness" and isinstance(value, dict):
+        return _render_seriousness(value)
+    if field == "assessment.expectedness" and isinstance(value, dict):
+        return _render_expectedness(value)
+    if field == "assessment.clock" and isinstance(value, dict):
+        return _render_clock(value)
     if field == "suspect_product_name":
         return f"Suspect product: {value}."
     if field == "source":
@@ -228,6 +307,16 @@ _FACT_FIELDS = [
 # (Round 2): the payload is {"history": <view json>}.
 _HISTORY_FIELDS = ["history.case_count", "history.event_count"]
 
+# Field paths read out of a captured assessment evidence item
+# (Round 4): the payload is {"assessment": <artefact json>}; each
+# fact's value is the whole artefact and the renderer picks its
+# part, while the citation path names the field claimed.
+_ASSESSMENT_FIELDS = [
+    "assessment.seriousness",
+    "assessment.expectedness",
+    "assessment.clock",
+]
+
 
 class CaseAssembler:
     """The agent step: facts → model proposal → citation check →
@@ -241,13 +330,20 @@ class CaseAssembler:
     the same citation discipline as every other statement."""
 
     def __init__(
-        self, store, chain: EvidenceChain, model: ModelPort, history=None, coding=None
+        self,
+        store,
+        chain: EvidenceChain,
+        model: ModelPort,
+        history=None,
+        coding=None,
+        assessment=None,
     ):
         self.store = store
         self.chain = chain
         self.model = model
         self.history = history
         self.coding = coding
+        self.assessment = assessment
         self.resolver = CitationResolver(chain)
 
     # -- tools (plain functions, Strands shape) ----------------------
@@ -256,11 +352,24 @@ class CaseAssembler:
         items = self.store.list_evidence(case_id)
         coding_items = [i for i in items if i.kind == "coding"]
         latest_coding = coding_items[-1] if coding_items else None
+        assessment_items = [i for i in items if i.kind == "assessment"]
+        latest_assessment = assessment_items[-1] if assessment_items else None
         for item in items:
             if item.kind == "intake_report":
                 fields = _FACT_FIELDS
             elif item.kind == "patient_history":
                 fields = _HISTORY_FIELDS
+            elif item.kind == "assessment":
+                if item is not latest_assessment:
+                    continue  # only the latest assessment capture speaks
+                payload = self.chain.payload_of(item)
+                value = payload.get("assessment")
+                if value is not None:
+                    for field in _ASSESSMENT_FIELDS:
+                        facts.append(
+                            {"item_id": item.item_id, "field": field, "value": value}
+                        )
+                continue
             elif item.kind == "coding":
                 if item is not latest_coding:
                     continue  # only the latest coding capture speaks
@@ -312,6 +421,29 @@ class CaseAssembler:
             item_id=item_id,
         )
 
+    def _attach_assessment(self, case_id: str, today: date) -> None:
+        """Refresh the case's assessment and capture the current
+        artefact on its evidence chain, once per artefact — the
+        same pattern as the coding capture. The service's
+        fingerprint guard means an unchanged case writes nothing;
+        a case whose facts moved supersedes, and the new artefact
+        is captured anew at this assembly, so a summary never
+        presents a superseded verdict as current."""
+        if self.assessment is None:
+            return
+        artefact = self.assessment.assess_case(case_id, today)
+        suffix = artefact.assessment_id.rsplit("-", 1)[-1]
+        item_id = f"EV-{case_id}-ASSESS-{suffix}"
+        if any(i.item_id == item_id for i in self.store.list_evidence(case_id)):
+            return
+        self.chain.append(
+            case_id=case_id,
+            kind="assessment",
+            payload={"assessment": artefact.model_dump(mode="json")},
+            recorded_on=today,
+            item_id=item_id,
+        )
+
     def _attach_history(self, case_id: str, today: date) -> None:
         """Capture the current patient history view on this case's
         chain, once per view version. A view the case already
@@ -351,6 +483,7 @@ class CaseAssembler:
             raise KeyError(f"no such case: {case_id}")
         self._attach_history(case_id, today)
         self._attach_coding(case_id, today)
+        self._attach_assessment(case_id, today)
         facts = self.read_case_facts(case_id)
         statements = self.model.propose_summary(facts)
         problems = self.resolver.problems(case_id, statements)
@@ -367,6 +500,17 @@ class CaseAssembler:
                 problems += coding_presentation_problems(
                     decisions, statements, dictionary
                 )
+        if self.assessment is not None:
+            # Round 4: the assessment discipline — a summary that
+            # states a seriousness, expectedness, obligation class
+            # or deadline different from the current assessment
+            # artefact is refused in code, on the same wholesale
+            # terms as an unresolvable citation.
+            from pv_cases.assessment import assessment_presentation_problems
+
+            current = self.assessment.current_assessment(case_id)
+            if current is not None:
+                problems += assessment_presentation_problems(current, statements)
         if problems:
             raise CitationRefusal(problems)
         summary = CaseSummary(

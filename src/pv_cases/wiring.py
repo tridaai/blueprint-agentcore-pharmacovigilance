@@ -6,6 +6,7 @@ same graph with different settings."""
 from __future__ import annotations
 
 from pv_cases.agent import CaseAssembler, model_for_profile
+from pv_cases.assessment import AssessmentService
 from pv_cases.coding import CodingService
 from pv_cases.config import Settings
 from pv_cases.dedup import DedupService
@@ -33,8 +34,13 @@ class Services:
         self.chain = EvidenceChain(self.store, self.objects)
         self.dedup = DedupService(self.store, self.chain)
         self.coding = CodingService(self.store, self.chain)
+        self.assessment = AssessmentService(self.store, self.chain)
         self.intake = IntakeService(
-            self.store, self.objects, dedup=self.dedup, coding=self.coding
+            self.store,
+            self.objects,
+            dedup=self.dedup,
+            coding=self.coding,
+            assessment=self.assessment,
         )
         self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
@@ -44,6 +50,7 @@ class Services:
             model_for_profile(settings.model_profile),
             history=self.history,
             coding=self.coding,
+            assessment=self.assessment,
         )
 
 
