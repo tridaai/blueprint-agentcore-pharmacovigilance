@@ -19,6 +19,7 @@ from pv_cases import __version__
 from pv_cases.agent import CitationRefusal
 from pv_cases.coding import CodingError, CodingTaskClosed
 from pv_cases.dedup import DedupDecisionError
+from pv_cases.followup import FOLLOW_UP_PACK, FollowUpError
 from pv_cases.models import (
     SUBJECT_EVENT,
     SUBJECT_PRODUCT,
@@ -378,6 +379,78 @@ def rsi_version(version: str) -> dict:
         return svc().assessment.rsi(version).model_dump(mode="json")
     except KeyError:
         raise HTTPException(404, f"no such RSI version: {version}")
+
+
+# ---------------------------------------------------------------------
+# Round 5: the follow-up workflow.
+# ---------------------------------------------------------------------
+
+
+@app.get("/follow-ups/pack")
+def follow_up_pack() -> dict:
+    """The versioned follow-up pack: days per missing class and
+    the cycle cap every request is raised under."""
+    return FOLLOW_UP_PACK
+
+
+@app.get("/follow-up-tasks/board")
+def follow_up_board(as_of: date | None = None) -> list[dict]:
+    """The follow-up board at ``as_of`` (default today): escalated
+    first, then overdue by days, then open by due date — ageing
+    derived at read time."""
+    return [
+        e.model_dump(mode="json")
+        for e in svc().followup.board(as_of or date.today())
+    ]
+
+
+@app.get("/follow-up-tasks")
+def list_follow_up_tasks(as_of: date | None = None) -> list[dict]:
+    """Every follow-up request with its derived state at ``as_of``."""
+    return [
+        v.model_dump(mode="json")
+        for v in svc().followup.list_views(as_of or date.today())
+    ]
+
+
+@app.get("/follow-up-tasks/{task_id}")
+def get_follow_up_task(task_id: str, as_of: date | None = None) -> dict:
+    """One request in full: the artefact, its derived state, and
+    its acts — the resolution and escalation read."""
+    try:
+        return svc().followup.view(task_id, as_of or date.today()).model_dump(
+            mode="json"
+        )
+    except KeyError:
+        raise HTTPException(404, f"no such follow-up request: {task_id}")
+
+
+@app.get("/cases/{case_id}/follow-up-tasks")
+def case_follow_up_tasks(case_id: str, as_of: date | None = None) -> list[dict]:
+    """The follow-up work belonging to one case, including a
+    validity request whose follow-up founded it."""
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return [
+        v.model_dump(mode="json")
+        for v in svc().followup.tasks_for_case(case_id, as_of or date.today())
+    ]
+
+
+@app.post("/follow-up-tasks/{task_id}/reports")
+def submit_follow_up_report(task_id: str, report: IntakeReport) -> dict:
+    """The follow-up intake: answer one request with one report.
+    The response records what the report did — resolved the
+    request, rolled it a cycle, escalated it, or founded the
+    request's case."""
+    try:
+        return svc().followup.submit_follow_up(
+            task_id, report, date.today()
+        ).model_dump(mode="json")
+    except KeyError:
+        raise HTTPException(404, f"no such follow-up request: {task_id}")
+    except FollowUpError as exc:
+        raise HTTPException(409, str(exc))
 
 
 class AdditionRequest(BaseModel):

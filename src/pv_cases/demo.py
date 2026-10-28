@@ -9,8 +9,10 @@ and the A.B. patient's history view. Round 3 adds the coding layer:
 the dictionary version in force, the main case's coded terms, and
 the coding-review queue. Round 4 adds the assessment layer: the
 planted seriousness/expectedness/clock fixtures graded by the three
-packs, and the clock board read a few days later. Run with
-``make demo``.
+packs, and the clock board read a few days later. Round 5 adds the
+follow-up workflow: the requests the book's deficiencies raise, and
+one case whose missing outcome lands on day 20 — after its 7-day
+clock has already run out. Run with ``make demo``.
 """
 
 from __future__ import annotations
@@ -123,6 +125,48 @@ def run_demo(out=print) -> Services:
             f" deadline {entry.deadline} — {entry.state}"
             f" ({entry.days_remaining:+d}d)"
         )
+
+    out("-" * 62)
+    from pv_cases.seed import followup_fixtures, followup_reports
+
+    out("Round 5 — the follow-up workflow (requests name the missing fact):")
+    for report in followup_fixtures():
+        svc.intake.ingest(report, DEMO_DAY)
+    for view in svc.followup.list_views(DEMO_DAY):
+        fields = ", ".join(item.field for item in view.task.items)
+        case = view.case_id or "no case yet"
+        out(
+            f"  {view.task.task_id} [{view.task.source}] {case}:"
+            f" missing {fields} — due {view.due_on} (cycle {view.cycle})"
+        )
+    out("The day-20 story: CASE-RPT-2026-0401 cannot be assessed —")
+    out("its event has no outcome. The follow-up lands on 2026-10-25:")
+    answers = followup_reports()
+    submission = svc.followup.submit_follow_up(
+        "FUP-CASE-RPT-2026-0401-A", answers["RPT-2026-0402"], date(2026, 10, 25)
+    )
+    artefact = svc.assessment.current_assessment("CASE-RPT-2026-0401")
+    out(
+        f"  request {submission.task_id}: {submission.outcome}"
+        f" by {submission.follow_up_report_id}"
+    )
+    out(
+        f"  assessment now: {artefact.seriousness.value},"
+        f" {artefact.expectedness.value},"
+        f" {artefact.clock.obligation_class} — day zero"
+        f" {artefact.clock.day_zero} (unmoved), deadline"
+        f" {artefact.clock.deadline}"
+    )
+    entry = next(
+        e
+        for e in svc.assessment.clock_board(date(2026, 10, 25))
+        if e.case_id == "CASE-RPT-2026-0401"
+    )
+    out(
+        f"  clock at 2026-10-25: {entry.state}"
+        f" ({entry.days_remaining:+d}d) — the breach is stated,"
+        " not hidden"
+    )
     return svc
 
 

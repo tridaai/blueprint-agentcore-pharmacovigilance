@@ -1,6 +1,7 @@
 """Command line: ``pv-agent feed|assemble|verify|dedup|confirm|
 reject|history-*|coding*|resolve-coding|dictionary*|assess|
-assessment|clocks|rsi`` against the configured store."""
+assessment|clocks|rsi|follow-up*|submit-follow-up`` against the
+configured store."""
 
 from __future__ import annotations
 
@@ -10,7 +11,8 @@ from datetime import date
 
 from pv_cases.coding import CodingError
 from pv_cases.dedup import DedupDecisionError
-from pv_cases.models import SUBJECT_EVENT, SUBJECT_PRODUCT
+from pv_cases.followup import FollowUpError
+from pv_cases.models import SUBJECT_EVENT, SUBJECT_PRODUCT, IntakeReport
 from pv_cases.runtime_app import handle_invocation
 from pv_cases.wiring import build_services
 import pv_cases.runtime_app as runtime_app
@@ -23,7 +25,10 @@ USAGE = (
     "coding <case_id>|coding-queue|"
     "resolve-coding <task_id> <coder> <term-or-code...>|"
     "dictionary|dictionary-add <proposed_by> <event|product> <entry-json>|"
-    "assess <case_id>|assessment <case_id>|clocks [as-of]|rsi"
+    "assess <case_id>|assessment <case_id>|clocks [as-of]|rsi|"
+    "follow-up-board [as-of]|follow-up-tasks <case_id>|"
+    "follow-up-task <task_id>|follow-up-pack|"
+    "submit-follow-up <task_id> <report-json>"
 )
 
 
@@ -213,6 +218,79 @@ def main(argv: list[str] | None = None) -> int:
             f"reference safety information {rsi.version} (repo-built"
             f" stand-in, not a real label): {labelled} labelled terms"
             f" over {len(rsi.products)} products"
+        )
+        return 0
+    if cmd == "follow-up-board" and len(argv) <= 2:
+        from datetime import date as _date
+
+        as_of = _date.fromisoformat(argv[1]) if len(argv) == 2 else today
+        board = svc.followup.board(as_of)
+        if not board:
+            print(f"follow-up board at {as_of}: empty")
+        for entry in board:
+            case = f" case {entry.case_id}" if entry.case_id else ""
+            overdue = (
+                f" ({entry.days_overdue}d overdue)" if entry.days_overdue else ""
+            )
+            print(
+                f"{entry.task_id}: [{entry.source}]{case}"
+                f" — {entry.state}, cycle {entry.cycle},"
+                f" due {entry.due_on}{overdue}"
+                f" — missing: {', '.join(entry.missing_fields)}"
+            )
+        return 0
+    if cmd == "follow-up-tasks" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        views = svc.followup.tasks_for_case(argv[1], today)
+        if not views:
+            print(f"{argv[1]}: no follow-up requests")
+        for view in views:
+            fields = ", ".join(i.field for i in view.task.items)
+            print(
+                f"{view.task.task_id}: [{view.task.source}] {view.state},"
+                f" cycle {view.cycle}, due {view.due_on} — missing: {fields}"
+            )
+        return 0
+    if cmd == "follow-up-task" and len(argv) == 2:
+        try:
+            view = svc.followup.view(argv[1], today)
+        except KeyError:
+            print(f"no such follow-up request: {argv[1]}")
+            return 1
+        print(json.dumps(view.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "follow-up-pack":
+        from pv_cases.followup import FOLLOW_UP_PACK
+
+        days = ", ".join(
+            f"{k} {v}d" for k, v in FOLLOW_UP_PACK["days_by_class"].items()
+        )
+        print(
+            f"follow-up pack {FOLLOW_UP_PACK['version']}: {days};"
+            f" max cycles {FOLLOW_UP_PACK['max_cycles']}"
+        )
+        return 0
+    if cmd == "submit-follow-up" and len(argv) == 3:
+        try:
+            report = IntakeReport.model_validate(json.loads(argv[2]))
+            submission = svc.followup.submit_follow_up(argv[1], report, today)
+        except KeyError:
+            print(f"no such follow-up request: {argv[1]}")
+            return 1
+        except (ValueError, FollowUpError) as exc:
+            print(f"follow-up refused: {exc}")
+            return 1
+        founded = (
+            f" — founded case {submission.new_case_id}"
+            if submission.new_case_id
+            else ""
+        )
+        print(
+            f"{submission.task_id}: {submission.outcome}"
+            f" by {submission.follow_up_report_id} — state"
+            f" {submission.state}, cycle {submission.cycle}{founded}"
         )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
