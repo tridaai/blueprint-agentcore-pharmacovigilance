@@ -34,3 +34,14 @@ def full(services) -> Services:
     for report in dedup_fixtures():
         services.intake.ingest(report, DAY)
     return services
+
+
+@pytest.fixture()
+def coded(full) -> Services:
+    """The full book plus Round 3's coding fixtures — one case per
+    match path and per trap the dictionary lookup must handle."""
+    from pv_cases.seed import coding_fixtures
+
+    for report in coding_fixtures():
+        full.intake.ingest(report, DAY)
+    return full
