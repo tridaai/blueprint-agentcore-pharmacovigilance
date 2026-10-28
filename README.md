@@ -551,6 +551,96 @@ programme.
   are behaviour at existing boundaries, not new artefacts.
   And still: **nothing is ever submitted to a regulator.**
 
+## What Round 10 adds
+
+- **Access control + existence hiding** (`src/pv_cases/access.py`,
+  migration 0009): until this round every surface took actor
+  strings on trust and a case id was a capability — anyone who
+  could guess or learn one could read the file. The surfaces
+  now carry a **principal** (an id + a role: the
+  `X-Principal-Id` / `X-Principal-Role` headers on the API, a
+  `principal` object on a Runtime payload, a `principal=`
+  argument on the act-recording services), judged in code
+  against a **versioned access pack** (2026.10.1):
+  - **Six roles, stated scopes.** *Intake processors* submit
+    reports and follow-ups and read their work queue — never
+    case files. The *safety scientist* works the book (coding
+    resolutions, dedup decisions, follow-up answers, releases,
+    recall). The *safety reviewer* and *medical reviewer* hold
+    the review acts — the medical reviewer also seals and
+    exports. The *quality auditor* reads **everything**,
+    including the denial log, and performs **nothing**. The
+    *case admin* tends reference data (dictionary additions)
+    and reads the system record — not case files. Administering
+    the dictionary is not a licence to read patients' cases.
+  - **Existence hiding.** A principal whose role has no case
+    scope gets, for any case id on every case-scoped read
+    surface, exactly the response a non-existent case earns —
+    byte for byte; list surfaces filter to empty rather than
+    leak a count. A case id cannot be probed for existence by
+    anyone the pack does not entitle to see it. Graded across
+    all sixteen case-scoped surfaces.
+  - **A carried principal binds the act's human.** Being
+    authenticated as yourself does not let you sign someone
+    else's review, release or seal: the principal's id must be
+    the actor the act names, compared under the same
+    `normalise_text` folding dual control uses.
+  - **Dual control is role-bound.** A review act's role *is* a
+    pack role, so where a principal is carried, the medical
+    accept must come from a principal holding the medical
+    reviewer role and the safety accept from a second principal
+    holding the safety role — two distinct normalised
+    identities (Round 9) *and* two pack-authorised roles.
+  - **Every refusal is an artefact.** Denials land in an
+    insert-only denial log (migration 0009) *before* the error
+    propagates — principal, role, surface, target, reason, pack
+    version — and the log is itself a guarded surface (auditor
+    + case admin). A denial over a hidden case records only the
+    id the requester supplied; nothing in it says whether the
+    case exists.
+  - **Scope limit, stated plainly:** enforcement governs calls
+    that *carry* a principal. Calls carrying none — the CLI,
+    the local harness, the pre-R10 test paths — remain the
+    trusted local operations path, exactly as since Round 1.
+    In a deployment, AgentCore Identity terminates caller
+    identity in front of these surfaces and every call presents
+    a principal.
+- **RT-07 closed** (the red team's medium open finding):
+  quarantine release had no role separation because no role
+  registry existed to check against. The release now belongs to
+  the safety scientist and the two review roles — not intake,
+  not admin, not the read-only auditor — and a release may not
+  come from the held text's **own reporter of record** where
+  the record names one (the report payload on the chain names
+  its reporter; a releaser folding to that name is refused,
+  principal-carried or not). Where the report names no
+  reporter, the record cannot tell, and the check does not
+  fire — the limit is stated in the code, not papered over.
+- **RT-15 closed** (the low open finding): every gateway call
+  record now carries a **content fingerprint** of the policy
+  pack it was judged under — sha256 over the pack's canonical
+  JSON — so an in-place rule edit without a version bump is
+  detectable after the fact by recomputing and comparing. The
+  recorded `pack_version` remains the pack's self-declaration;
+  the fingerprint is its content. Seven new zero-tolerance
+  eval counters grade the whole layer: existence leaks,
+  cross-scope reads, denied acts executing, wrong-role and
+  self releases, unrecorded denials, fingerprint mismatches.
+  With both findings closed, `docs/red-team.md` carries no
+  open findings. And still: **nothing is ever submitted to a
+  regulator.**
+- **Postgres profile boot fix** (found by this round's parity
+  leg): the migration runner's ledger insert spoke SQLite's
+  `?` placeholder to psycopg connections, so a
+  `DATABASE_URL` deployment could never finish booting — the
+  store's own queries translate placeholders, the raw migration
+  connection had no translator. The runner now speaks each
+  dialect's own placeholder, with a regression test; the full
+  service graph was exercised on the Postgres dialect for the
+  parity leg (migrations 0001–0009, the planted feed, the
+  denial log and gateway fingerprints round-tripped through a
+  reopened store).
+
 ## Quick start
 
 ```bash
@@ -568,8 +658,26 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 9 of 20.** Built and gate-green: everything in Rounds
-  1–8, plus the red team (docs/red-team.md): twenty-seven
+- **Round 10 of 20.** Built and gate-green: everything in
+  Rounds 1–9, plus access control — a versioned access pack
+  judging every principal the surfaces carry (six roles with
+  stated read surfaces and acts), existence hiding on every
+  case-scoped read (a role with no case scope is answered
+  exactly as for a non-existent case, on all sixteen surfaces),
+  list filtering that never leaks a count, act gating with the
+  principal bound to the human its act names, dual control
+  bound to two pack-authorised roles where a principal is
+  carried, and an insert-only denial log (migration 0009) that
+  records every refusal before it propagates. The round closes
+  the red team's two open findings: quarantine release has
+  role separation now, and never from the held text's own
+  reporter of record where the record names one (RT-07); and
+  every gateway call records a content fingerprint of the
+  policy pack it was judged under, so in-place pack edits are
+  detectable after the fact (RT-15). Scope limit, stated
+  plainly: enforcement governs calls that carry a principal;
+  principal-less calls remain the trusted local path, as they
+  have been since Round 1. Round 9 shipped: the red team (docs/red-team.md): twenty-seven
   attacks over the earlier rounds' trust boundaries, four real
   defects found and fixed — held text no longer decides
   verdicts (a held description is absent to the assessment

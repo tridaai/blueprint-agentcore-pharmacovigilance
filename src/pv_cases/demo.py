@@ -26,7 +26,12 @@ its text held out of the summary until a named reviewer releases
 it, a cross-case recall finds the duplicate pair's other half by
 reference, and gateway calls are judged by the policy pack — an
 auditor's reach for a case record denied in the platform's own
-shape, HTTP 200 with a -32002 in the body.
+shape, HTTP 200 with a -32002 in the body. Round 10 adds access
+control: the surfaces carry a principal, the access pack scopes
+each role's reads and acts, a case admin's case read is answered
+exactly as a non-existent case, the quality auditor's attempt
+at a review act is refused and recorded — and every gateway
+call now carries the policy pack's content fingerprint.
 Run with ``make demo``.
 """
 
@@ -429,8 +434,56 @@ def run_demo(out=print) -> Services:
     )
     out(
         f"  every call recorded: {len(svc.gateway.calls())}"
-        " (allow and deny alike)"
+        " (allow and deny alike), each carrying the policy"
+        f" pack's content fingerprint"
+        f" {svc.gateway.calls()[0].pack_fingerprint[:12]}…"
     )
+
+    out("-" * 62)
+    out("Round 10 — access control: principals, roles, hiding.")
+    from pv_cases.access import (
+        SURFACE_CASE,
+        AccessDeniedError,
+        Principal,
+    )
+
+    admin = Principal(id="Mr K. Dev", role="case_admin")
+    try:
+        svc.access.require_case_read(
+            admin, SURFACE_CASE, case_id="CASE-RPT-2026-0001", on=DEMO_DAY
+        )
+        out("  a case admin reads a case file: ALLOWED (unexpected)")
+    except AccessDeniedError:
+        out(
+            "  a case admin asks for CASE-RPT-2026-0001: answered"
+            " exactly as a non-existent case — reference-data"
+            " administration is not a licence to read case files"
+        )
+    auditor = Principal(id="Ms A. Whitfield", role="quality_auditor")
+    try:
+        svc.review.record_review(
+            "CASE-RPT-2026-9001",
+            "Ms A. Whitfield",
+            "medical_reviewer",
+            "accept",
+            "",
+            DEMO_DAY,
+            principal=auditor,
+        )
+        out("  the auditor records a review act: ALLOWED (unexpected)")
+    except AccessDeniedError as exc:
+        out(
+            "  the quality auditor tries to record a review act:"
+            f" refused ({exc.reason}) — oversight reads"
+            " everything and performs nothing"
+        )
+    out("  the refusals are artefacts — the denial log:")
+    for denial in svc.access.denials():
+        out(
+            f"  {denial.denial_id}: {denial.principal_id}"
+            f" [{denial.role}] {denial.surface} -> {denial.reason}"
+            f" (pack {denial.pack_version})"
+        )
     return svc
 
 

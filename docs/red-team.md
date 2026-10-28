@@ -106,3 +106,49 @@ boundary values it previously only approached:
 - **Follow-up cap edge**: a resolving report on the third cycle
   resolves the request (the cap escalates *failed* attempts,
   not late successes).
+
+## Round 10 amendments — the open findings, closed
+
+This section is appended, not edited into the record above:
+the Round 9 verdicts stand as written, including the two open
+findings. Round 10 (access control + existence hiding) was the
+work both findings pointed at, and it closes both.
+
+1. **RT-07 (medium) — CLOSED by Round 10.** The role registry
+   the finding said was missing now exists: the versioned
+   access pack (`src/pv_cases/access.py`, 2026.10.1) names six
+   roles and the acts each holds. The quarantine release act
+   belongs to the safety scientist, the safety reviewer and
+   the medical reviewer — not to intake processors, not to
+   case admins, not to the read-only quality auditor — judged
+   wherever a call carries a principal, with the refusal
+   recorded in the denial log before it propagates. The round
+   adds the second half of the discipline the finding implied:
+   a release may not come from the held text's **own reporter
+   of record** where the record can tell (the report payload
+   on the chain names its reporter; a releaser whose name
+   folds to it is refused, principal-carried or not). Where
+   the report names no reporter — identified by a contact
+   channel alone — the record cannot tell and the check does
+   not fire; that limit is stated in the code. Kept as traps:
+   `tests/test_access.py` (wrong-role releases denied and
+   recorded, self-release refused where determinable) and the
+   eval counters `access_release_wrong_role` /
+   `access_self_release_accepted`, zero-tolerance.
+2. **RT-15 (low) — CLOSED by Round 10.** Every `GatewayCall`
+   record now carries `pack_fingerprint`: sha256 over the
+   policy pack's canonical JSON, computed at invoke time from
+   the live pack. A recorded call can be checked after the
+   fact against the pack it claims to have been judged under;
+   an in-place rule edit without a version bump changes the
+   fingerprint and is detectable. (The same argument applied
+   to every versioned pack in the repo; the gateway's calls
+   are the recorded judgements, so the gateway pack is where
+   the fingerprint binds. The access pack carries its own
+   fingerprint, served at `/access/pack`.) Kept as traps:
+   `tests/test_access.py` (fingerprint recorded on allow and
+   deny alike; a tampered same-version copy fingerprints
+   differently) and the eval counter
+   `gateway_pack_fingerprint_wrong`, zero-tolerance.
+
+No open findings remain on this page.

@@ -29,7 +29,7 @@ says, per service, what is real today and what is a double.
 | **Memory** | Short-term per session; long-term semantic + episodic strategies for patient/product history feeding case assembly | **Port + local double (Round 8).** `MemoryPort` with the labelled local double; recall is recorded as retrievals of references under a versioned pack with a 365-day retention rule — AgentCore Memory is the production path behind the port |
 | **Gateway** | Safety-database, product-dictionary and literature sources as MCP targets; every production tool call traverses it | **Port wired (Round 8).** The case record, patient history and dictionary tools sit behind the enforcing `GatewayService`; an AgentCore Gateway target is the production transport behind the same invoke contract |
 | **Policy** | Cedar pack (role × tool × PHI caps) in ENFORCE mode on the Gateway; denials arrive as HTTP 200 + JSON-RPC −32002 and must be detected, recorded, surfaced | **Wired (Round 8).** Pack of record at `infra/policies/pv-gateway-policy.cedar` with its executable mirror in code (parity graded by test); denials are constructed as the −32002 envelope in one place, recorded insert-only, and the denied tool never executes |
-| **Identity** | Inbound caller identity; outbound OAuth/API-key vault via `@requires_access_token` / `@requires_api_key` shapes | **Partial (Round 8).** Gateway calls carry a named principal + pack role, judged before any tool runs; outbound vault shapes land with the AWS account integration |
+| **Identity** | Inbound caller identity; outbound OAuth/API-key vault via `@requires_access_token` / `@requires_api_key` shapes | **Wired locally (Rounds 8 + 10).** Gateway calls carry a named principal + pack role, judged before any tool runs; and the case surfaces carry a principal judged by the versioned access pack — role-scoped reads, existence hiding, act gating, a recorded denial log. AgentCore Identity is the production terminator in front of the same contract; outbound vault shapes land with the AWS account integration |
 | **Evaluations** | Online evaluators (correctness, faithfulness, harm) sampled on live traffic | **Config later (Round 20 infra).** The repo's own deterministic eval gate (`evals/run_evals.py`) is primary and already binding |
 | **Observability** | OpenTelemetry spans per case step; CloudWatch GenAI dashboards | **Partial.** Structured JSON logs with session/case ids (`pv_cases/logging_config.py`); spans land with the infra round |
 
@@ -197,6 +197,25 @@ other blueprints already cover the LangGraph pattern.
     compared under `normalise_text` folding, so a name variant
     is the same person. The full attack list, verdicts and the
     two open findings live in `docs/red-team.md`.
+16. (R10) Who is calling is judged before what they may see or
+    do: the surfaces carry a principal (id + role) judged
+    against the versioned access pack — per-role read surfaces
+    and acts, judged as carried, with no default principal.
+    A case read by a role with no case scope is answered
+    exactly as a non-existent case, on every case-scoped
+    surface; list surfaces filter rather than leak counts.
+    A carried principal binds the human its act names, and
+    dual control is two pack-authorised roles as well as two
+    distinct identities. Every refusal is recorded in the
+    insert-only denial log before it propagates. Enforcement
+    governs calls that carry a principal; principal-less calls
+    are the trusted local path. A quarantine release belongs
+    to the pack's judging roles and never to the held text's
+    own reporter of record where the record names one
+    (RT-07, closed); and every gateway call records a content
+    fingerprint of the policy pack it was judged under, so an
+    in-place rule edit without a version bump is detectable
+    after the fact (RT-15, closed).
 
 ## Round map
 
