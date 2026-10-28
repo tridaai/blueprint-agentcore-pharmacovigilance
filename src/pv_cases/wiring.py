@@ -15,6 +15,7 @@ from pv_cases.followup import FollowUpService
 from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
 from pv_cases.object_store import LocalObjectStore
+from pv_cases.review import ReviewService
 from pv_cases.services import IntakeService
 from pv_cases.store import SqlCaseStore
 
@@ -56,6 +57,15 @@ class Services:
             dedup=self.dedup,
         )
         self.intake.followup = self.followup
+        # Round 6: the medical-reviewer gate. It reads the coding
+        # and assessment layers to bind the record a review
+        # decides, and records its acts on the evidence chain.
+        self.review = ReviewService(
+            self.store,
+            self.chain,
+            coding=self.coding,
+            assessment=self.assessment,
+        )
         self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
         self.assembler = CaseAssembler(
