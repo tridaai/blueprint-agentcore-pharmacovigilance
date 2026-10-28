@@ -16,7 +16,16 @@ from pathlib import Path
 from typing import Protocol
 
 from pv_cases.migrations import apply_migrations
-from pv_cases.models import Case, CaseSummary, EvidenceItem, FollowUpTask
+from pv_cases.models import (
+    Case,
+    CaseSummary,
+    DedupAssessment,
+    DedupLink,
+    EvidenceItem,
+    FollowUpTask,
+    PatientHistoryView,
+    ProductHistoryView,
+)
 
 
 class CaseStore(Protocol):
@@ -32,6 +41,16 @@ class CaseStore(Protocol):
     def add_summary(self, summary: CaseSummary) -> None: ...
     def get_summary(self, summary_id: str) -> CaseSummary | None: ...
     def list_summaries(self, case_id: str) -> list[CaseSummary]: ...
+    # Round 2: de-duplication + history views.
+    def add_dedup_assessment(self, assessment: DedupAssessment) -> None: ...
+    def list_dedup_assessments(self) -> list[DedupAssessment]: ...
+    def add_dedup_link(self, link: DedupLink) -> None: ...
+    def get_dedup_link(self, link_id: str) -> DedupLink | None: ...
+    def list_dedup_links(self, status: str | None = None) -> list[DedupLink]: ...
+    def update_dedup_link(self, link: DedupLink) -> None: ...
+    def add_history_view(self, kind: str, subject: str, view) -> None: ...
+    def get_history_view(self, view_id: str): ...
+    def list_history_views(self, kind: str, subject: str) -> list: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -259,6 +278,98 @@ class SqlCaseStore:
         )
         return [CaseSummary.model_validate_json(r[0]) for r in rows]
 
+    # -- dedup (Round 2) ----------------------------------------------
+    def add_dedup_assessment(self, assessment: DedupAssessment) -> None:
+        self._run(
+            "INSERT INTO dedup_assessments (assessment_id, case_a_id, case_b_id,"
+            " pack_version, band, score, payload) VALUES (?,?,?,?,?,?,?)",
+            (
+                assessment.assessment_id,
+                assessment.case_a_id,
+                assessment.case_b_id,
+                assessment.pack_version,
+                assessment.band.value,
+                assessment.score,
+                assessment.model_dump_json(),
+            ),
+        )
+
+    def list_dedup_assessments(self) -> list[DedupAssessment]:
+        rows = self._run(
+            "SELECT payload FROM dedup_assessments ORDER BY assessment_id",
+            fetch="all",
+        )
+        return [DedupAssessment.model_validate_json(r[0]) for r in rows]
+
+    def add_dedup_link(self, link: DedupLink) -> None:
+        self._run(
+            "INSERT INTO dedup_links (link_id, assessment_id, case_a_id, case_b_id,"
+            " band, status, payload) VALUES (?,?,?,?,?,?,?)",
+            (
+                link.link_id,
+                link.assessment_id,
+                link.case_a_id,
+                link.case_b_id,
+                link.band.value,
+                link.status.value,
+                link.model_dump_json(),
+            ),
+        )
+
+    def get_dedup_link(self, link_id: str) -> DedupLink | None:
+        row = self._run(
+            "SELECT payload FROM dedup_links WHERE link_id = ?", (link_id,), fetch="one"
+        )
+        return DedupLink.model_validate_json(row[0]) if row else None
+
+    def list_dedup_links(self, status: str | None = None) -> list[DedupLink]:
+        if status is None:
+            rows = self._run(
+                "SELECT payload FROM dedup_links ORDER BY link_id", fetch="all"
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM dedup_links WHERE status = ? ORDER BY link_id",
+                (status,),
+                fetch="all",
+            )
+        return [DedupLink.model_validate_json(r[0]) for r in rows]
+
+    def update_dedup_link(self, link: DedupLink) -> None:
+        self._run(
+            "UPDATE dedup_links SET status = ?, payload = ? WHERE link_id = ?",
+            (link.status.value, link.model_dump_json(), link.link_id),
+        )
+
+    # -- history views (Round 2) ---------------------------------------
+    def add_history_view(self, kind: str, subject: str, view) -> None:
+        self._run(
+            "INSERT INTO history_views (view_id, kind, subject, payload)"
+            " VALUES (?,?,?,?)",
+            (view.view_id, kind, subject, view.model_dump_json()),
+        )
+
+    def get_history_view(self, view_id: str):
+        row = self._run(
+            "SELECT kind, payload FROM history_views WHERE view_id = ?",
+            (view_id,),
+            fetch="one",
+        )
+        if row is None:
+            return None
+        cls = PatientHistoryView if row[0] == "patient" else ProductHistoryView
+        return cls.model_validate_json(row[1])
+
+    def list_history_views(self, kind: str, subject: str) -> list:
+        rows = self._run(
+            "SELECT payload FROM history_views WHERE kind = ? AND subject = ?"
+            " ORDER BY view_id",
+            (kind, subject),
+            fetch="all",
+        )
+        cls = PatientHistoryView if kind == "patient" else ProductHistoryView
+        return [cls.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -268,6 +379,9 @@ class InMemoryCaseStore:
         self.follow_ups: dict[str, FollowUpTask] = {}
         self.evidence: dict[str, list[EvidenceItem]] = {}
         self.summaries: dict[str, CaseSummary] = {}
+        self.dedup_assessments: dict[str, DedupAssessment] = {}
+        self.dedup_links: dict[str, DedupLink] = {}
+        self.history_views: dict[str, object] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -307,3 +421,41 @@ class InMemoryCaseStore:
 
     def list_summaries(self, case_id: str) -> list[CaseSummary]:
         return [s for s in self.summaries.values() if s.case_id == case_id]
+
+    def add_dedup_assessment(self, assessment: DedupAssessment) -> None:
+        self.dedup_assessments[assessment.assessment_id] = assessment
+
+    def list_dedup_assessments(self) -> list[DedupAssessment]:
+        return [self.dedup_assessments[k] for k in sorted(self.dedup_assessments)]
+
+    def add_dedup_link(self, link: DedupLink) -> None:
+        self.dedup_links[link.link_id] = link
+
+    def get_dedup_link(self, link_id: str) -> DedupLink | None:
+        return self.dedup_links.get(link_id)
+
+    def list_dedup_links(self, status: str | None = None) -> list[DedupLink]:
+        links = [self.dedup_links[k] for k in sorted(self.dedup_links)]
+        if status is not None:
+            links = [l for l in links if l.status.value == status]
+        return links
+
+    def update_dedup_link(self, link: DedupLink) -> None:
+        self.dedup_links[link.link_id] = link
+
+    def add_history_view(self, kind: str, subject: str, view) -> None:
+        self.history_views[view.view_id] = view
+
+    def get_history_view(self, view_id: str):
+        return self.history_views.get(view_id)
+
+    def list_history_views(self, kind: str, subject: str) -> list:
+        views = []
+        for view in self.history_views.values():
+            if kind == "patient" and isinstance(view, PatientHistoryView):
+                if view.patient_key == subject:
+                    views.append(view)
+            elif kind == "product" and isinstance(view, ProductHistoryView):
+                if view.product_code == subject:
+                    views.append(view)
+        return sorted(views, key=lambda v: v.view_id)

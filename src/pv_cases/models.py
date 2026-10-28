@@ -28,6 +28,12 @@ class ReportSource(str, Enum):
 class CaseStatus(str, Enum):
     OPEN = "open"
     SUMMARY_ASSEMBLED = "summary_assembled"
+    # R2: a dedup link (definite/probable) is pending or confirmed
+    # against this case. The case stays fully readable in both.
+    DUPLICATE_LINKED = "duplicate_linked"
+    # R2: a named human confirmed the link; the case is closed as a
+    # duplicate of the linked case — closed, never deleted or merged.
+    CLOSED_AS_DUPLICATE = "closed_as_duplicate"
 
 
 class FollowUpStatus(str, Enum):
@@ -147,6 +153,17 @@ def _normalise(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
+def normalise_text(text: str) -> str:
+    """The package's one text normalisation (dedup, history)."""
+    return _normalise(text)
+
+
+def is_named_human(value: str | None) -> bool:
+    """A decision act needs a name a reviewer could be held to —
+    non-empty and not a placeholder."""
+    return _present(value)
+
+
 def patient_key(patient: Patient) -> str:
     """A stable mechanical key for the patient as reported — used only
     for exact-key duplicate suspicion in R1 (real de-duplication,
@@ -232,3 +249,125 @@ class CaseSummary(BaseModel):
     model_profile: str
     statements: list[SummaryStatement]
     assembled_on: date
+
+
+# ---------------------------------------------------------------------
+# Round 2: de-duplication.
+#
+# A dedup *assessment* is the rule pack's scored verdict on one pair
+# of cases, with every signal that produced the score recorded. A
+# *link* is what a definite/probable assessment creates: a pending
+# human decision. Nothing in this module merges anything — there is
+# no merge artefact because there is no merge.
+# ---------------------------------------------------------------------
+
+
+class DedupBand(str, Enum):
+    DEFINITE = "definite_duplicate"
+    PROBABLE = "probable_duplicate"
+    NOT_DUPLICATE = "not_duplicate"
+
+
+class DedupSignal(BaseModel):
+    """One scored (or gating) observation behind an assessment.
+    ``gate`` signals carry no points: when one fires it fixes the
+    band regardless of the score, and it says why."""
+
+    name: str
+    points: int = 0
+    detail: str = ""
+    gate: bool = False
+
+
+class DedupAssessment(BaseModel):
+    assessment_id: str
+    case_a_id: str  # the earlier case of the pair
+    case_b_id: str  # the later case of the pair
+    pack_version: str
+    score: int
+    band: DedupBand
+    signals: list[DedupSignal] = Field(default_factory=list)
+    assessed_on: date
+
+
+class DedupLinkStatus(str, Enum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+
+
+class DedupLink(BaseModel):
+    """A pending (then decided) duplicate link between two cases.
+    Both cases stay readable forever; confirmation closes the later
+    case as a duplicate by recorded human act, rejection annotates
+    the link and lets the later case proceed."""
+
+    link_id: str
+    assessment_id: str
+    case_a_id: str
+    case_b_id: str
+    band: DedupBand
+    status: DedupLinkStatus = DedupLinkStatus.PENDING
+    created_on: date
+    decided_by: str | None = None
+    decided_on: date | None = None
+    decision_note: str | None = None
+
+
+# ---------------------------------------------------------------------
+# Round 2: history views.
+#
+# Derived-in-code views over stored artefacts only. A view is
+# content-addressed: rebuilding it over unchanged inputs returns the
+# stored view. Facts keep the case they were read from, and identity
+# conflicts are shown — never merged into a single "true" value.
+# ---------------------------------------------------------------------
+
+
+class IdentityFact(BaseModel):
+    field: str
+    value: str
+    case_id: str
+    report_id: str
+
+
+class HistoryEvent(BaseModel):
+    case_id: str
+    report_id: str
+    product_code: str | None = None
+    verbatim_term: str
+    onset_date: date | None = None
+    outcome: str | None = None
+
+
+class PatientHistoryView(BaseModel):
+    view_id: str
+    patient_key: str
+    version: int
+    built_on: date
+    case_ids: list[str] = Field(default_factory=list)
+    case_count: int = 0
+    event_count: int = 0
+    events: list[HistoryEvent] = Field(default_factory=list)
+    event_term_counts: dict[str, int] = Field(default_factory=dict)
+    product_codes: list[str] = Field(default_factory=list)
+    identity_facts: list[IdentityFact] = Field(default_factory=list)
+    identity_conflicts: dict[str, list[str]] = Field(default_factory=dict)
+    follow_up_task_ids: list[str] = Field(default_factory=list)
+    case_statuses: dict[str, str] = Field(default_factory=dict)
+
+
+class ProductHistoryView(BaseModel):
+    view_id: str
+    product_code: str
+    product_name: str | None = None
+    version: int
+    built_on: date
+    case_ids: list[str] = Field(default_factory=list)
+    case_count: int = 0
+    event_count: int = 0
+    events: list[HistoryEvent] = Field(default_factory=list)
+    event_term_counts: dict[str, int] = Field(default_factory=dict)
+    patient_keys: list[str] = Field(default_factory=list)
+    follow_up_task_ids: list[str] = Field(default_factory=list)
+    case_statuses: dict[str, str] = Field(default_factory=dict)
