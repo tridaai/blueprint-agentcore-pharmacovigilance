@@ -40,10 +40,15 @@ class IntakeOutcome:
 
 
 class IntakeService:
-    def __init__(self, store, objects: ObjectStore):
+    def __init__(self, store, objects: ObjectStore, dedup=None):
         self.store = store
         self.objects = objects
         self.chain = EvidenceChain(store, objects)
+        # Round 2: when a dedup service is wired, every new case is
+        # assessed against the stored book before ingest returns —
+        # a duplicate finding is a link + a human queue item, never
+        # a merge.
+        self.dedup = dedup
 
     def ingest(self, report: IntakeReport, today: date) -> IntakeOutcome:
         assessment = assess_validity(report)
@@ -82,6 +87,10 @@ class IntakeService:
             recorded_on=today,
             item_id=f"EV-{case_id}-001",
         )
+        if self.dedup is not None:
+            self.dedup.scan_case(case_id, today)
+            # The scan may have marked this case duplicate_linked.
+            case = self.store.get_case(case_id)
         return IntakeOutcome(report.report_id, case, None)
 
     def ingest_feed(self, reports: list[IntakeReport], today: date) -> list[IntakeOutcome]:

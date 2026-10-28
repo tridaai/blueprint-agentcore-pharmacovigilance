@@ -145,6 +145,10 @@ def _render_fact(fact: dict[str, Any]) -> str | None:
         return f"Patient age: {value}."
     if field == "patient.sex":
         return f"Patient sex: {value}."
+    if field == "history.case_count":
+        return f"Patient history: {value} case(s) on record for this patient."
+    if field == "history.event_count":
+        return f"Patient history: {value} event(s) on record for this patient."
     return None
 
 
@@ -194,30 +198,74 @@ _FACT_FIELDS = [
     "events.0.description",
 ]
 
+# Field paths read out of a captured patient-history evidence item
+# (Round 2): the payload is {"history": <view json>}.
+_HISTORY_FIELDS = ["history.case_count", "history.event_count"]
+
 
 class CaseAssembler:
     """The agent step: facts → model proposal → citation check →
     stored summary. The Strands-shaped loop of R1: its tools are the
-    evidence reads below; its only write is the verified summary."""
+    evidence reads below; its only write is the verified summary.
 
-    def __init__(self, store, chain: EvidenceChain, model: ModelPort):
+    Round 2: when a patient history view has been built for the
+    case's patient, the assembler captures it on the case's own
+    evidence chain and reads its headline counts as facts, so the
+    summary's history statements cite the view artefact itself —
+    the same citation discipline as every other statement."""
+
+    def __init__(self, store, chain: EvidenceChain, model: ModelPort, history=None):
         self.store = store
         self.chain = chain
         self.model = model
+        self.history = history
         self.resolver = CitationResolver(chain)
 
     # -- tools (plain functions, Strands shape) ----------------------
     def read_case_facts(self, case_id: str) -> list[dict[str, Any]]:
         facts: list[dict[str, Any]] = []
         for item in self.store.list_evidence(case_id):
-            if item.kind != "intake_report":
+            if item.kind == "intake_report":
+                fields = _FACT_FIELDS
+            elif item.kind == "patient_history":
+                fields = _HISTORY_FIELDS
+            else:
                 continue
             payload = self.chain.payload_of(item)
-            for field in _FACT_FIELDS:
+            for field in fields:
                 value = _dig(payload, field)
                 if value is not None:
                     facts.append({"item_id": item.item_id, "field": field, "value": value})
         return facts
+
+    def _attach_history(self, case_id: str, today: date) -> None:
+        """Capture the current patient history view on this case's
+        chain, once per view version. A view the case already
+        carries is not re-appended."""
+        if self.history is None:
+            return
+        from pv_cases.models import IntakeReport, patient_key
+
+        report = None
+        for item in self.store.list_evidence(case_id):
+            if item.kind == "intake_report":
+                report = IntakeReport.model_validate(self.chain.payload_of(item))
+                break
+        if report is None:
+            return
+        view = self.history.latest_patient_view(patient_key(report.patient))
+        if view is None:
+            return
+        item_id = f"EV-{case_id}-HIST-{view.view_id}"
+        if any(i.item_id == item_id for i in self.store.list_evidence(case_id)):
+            return
+        self.chain.append(
+            case_id=case_id,
+            kind="patient_history",
+            payload={"history": view.model_dump(mode="json")},
+            recorded_on=today,
+            item_id=item_id,
+        )
 
     # -- the step ------------------------------------------------------
     def assemble(self, case_id: str, today: date) -> CaseSummary:
@@ -227,6 +275,7 @@ class CaseAssembler:
         case = self.store.get_case(case_id)
         if case is None:
             raise KeyError(f"no such case: {case_id}")
+        self._attach_history(case_id, today)
         facts = self.read_case_facts(case_id)
         statements = self.model.propose_summary(facts)
         problems = self.resolver.problems(case_id, statements)
@@ -240,6 +289,10 @@ class CaseAssembler:
             assembled_on=today,
         )
         self.store.add_summary(summary)
-        case.status = CaseStatus.SUMMARY_ASSEMBLED
-        self.store.update_case(case)
+        # Only an untouched case advances to summary_assembled; a
+        # dedup status (duplicate_linked / closed_as_duplicate) is a
+        # safety decision and assembly never overwrites it.
+        if case.status is CaseStatus.OPEN:
+            case.status = CaseStatus.SUMMARY_ASSEMBLED
+            self.store.update_case(case)
         return summary

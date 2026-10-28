@@ -176,3 +176,144 @@ def reference_feed() -> list[IntakeReport]:
             ],
         ),
     ]
+
+
+def dedup_fixtures() -> list[IntakeReport]:
+    """Round 2's planted set: the near-miss shapes the dedup rule
+    pack must grade into their stated bands. Each fixture's expected
+    band against the reference feed's A.B. cases (RPT-2026-0005 /
+    0006) is named in its comment; tests and evals grade exactly
+    these. All are valid reports — every one becomes a case."""
+    return [
+        # Probable pair (with RPT-2026-0102): the same patient by
+        # initials + age (no date of birth on either side, sex
+        # missing on one), same product, closely-worded but not
+        # identical event terms, onsets two days apart. Expected:
+        # probable_duplicate, a link and a human decision.
+        IntakeReport(
+            report_id="RPT-2026-0101",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 6),
+            patient=Patient(initials="S.P.", age=45, sex="F"),
+            reporter=Reporter(name="Patient self report", email="sp@example.net"),
+            suspect_product_code="NBT-204",
+            suspect_product_name="Somnirel",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Excessive sleepiness in the morning",
+                    onset_date=date(2026, 10, 3),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        IntakeReport(
+            report_id="RPT-2026-0102",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 10, 8),
+            patient=Patient(initials="S.P.", age=45),
+            reporter=Reporter(
+                name="Dr Mara Lindqvist",
+                qualification="GP",
+                email="mlindqvist@example-clinic.org",
+            ),
+            suspect_product_code="NBT-204",
+            suspect_product_name="Somnirel",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Excessive sleepiness in the mornings at work",
+                    onset_date=date(2026, 10, 5),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        # Near-miss: same patient and product as the A.B. cases, but
+        # a DIFFERENT event with its own onset — a genuine second
+        # case. Expected: not_duplicate (event-terms gate).
+        IntakeReport(
+            report_id="RPT-2026-0103",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2026, 11, 21),
+            patient=Patient(initials="A.B.", date_of_birth=date(1988, 3, 14), sex="F"),
+            reporter=Reporter(
+                name="Dr Elena Ruiz",
+                qualification="cardiologist",
+                email="eruiz@example-clinic.org",
+                country="ES",
+            ),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Severe headache",
+                    onset_date=date(2026, 11, 20),
+                    outcome="recovered",
+                )
+            ],
+        ),
+        # Namesake trap: same initials, same event, same product,
+        # same onset as the A.B. cases — but a different date of
+        # birth. A different person. Expected: not_duplicate
+        # (date-of-birth contradiction gate).
+        IntakeReport(
+            report_id="RPT-2026-0104",
+            source=ReportSource.PATIENT,
+            received_on=date(2026, 10, 12),
+            patient=Patient(initials="A.B.", date_of_birth=date(1991, 7, 2), sex="F"),
+            reporter=Reporter(name="Patient self report", email="a.banerjee@example.net"),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Blistering rash on hands",
+                    onset_date=date(2026, 10, 9),
+                    outcome="recovering",
+                )
+            ],
+        ),
+        # Recurrence trap: same patient, product and event as the
+        # A.B. cases — but onset a full year earlier. A separate
+        # occurrence, not a duplicate. Expected: not_duplicate
+        # (onset-window gate). Age 38 is consistent with the DOB.
+        IntakeReport(
+            report_id="RPT-2026-0105",
+            source=ReportSource.CLINICIAN,
+            received_on=date(2025, 10, 15),
+            patient=Patient(initials="A.B.", age=38, date_of_birth=date(1988, 3, 14), sex="F"),
+            reporter=Reporter(
+                name="Pharmacist D. Osei",
+                qualification="pharmacist",
+                email="dosei@example-pharmacy.org",
+            ),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Blistering rash on hands",
+                    onset_date=date(2025, 10, 9),
+                    outcome="recovered",
+                )
+            ],
+        ),
+        # Data-quality fixture: the same A.B. patient again, a new
+        # minor event — and an age (52) that contradicts the date of
+        # birth on the same patient's other reports (38 in
+        # RPT-2026-0105). The history view must show BOTH ages as a
+        # conflict, never merge them. Expected dedup band against
+        # every A.B. case: not_duplicate (unrelated event terms).
+        IntakeReport(
+            report_id="RPT-2026-0106",
+            source=ReportSource.CALL_CENTRE,
+            received_on=date(2026, 10, 16),
+            patient=Patient(initials="A.B.", age=52, date_of_birth=date(1988, 3, 14), sex="F"),
+            reporter=Reporter(name="Call centre agent R. Patel", phone="+1-555-0199"),
+            suspect_product_code="NBT-317",
+            suspect_product_name="Dermaclear",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Itchy skin where cream applied",
+                    onset_date=date(2026, 10, 15),
+                    outcome="recovering",
+                )
+            ],
+        ),
+    ]

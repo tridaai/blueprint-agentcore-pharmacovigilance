@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from pv_cases.agent import CaseAssembler, model_for_profile
 from pv_cases.config import Settings
+from pv_cases.dedup import DedupService
 from pv_cases.evidence import EvidenceChain
+from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
 from pv_cases.object_store import LocalObjectStore
 from pv_cases.services import IntakeService
@@ -28,10 +30,15 @@ class Services:
         else:
             self.store = SqlCaseStore("sqlite", sqlite_path=settings.sqlite_path)
         self.chain = EvidenceChain(self.store, self.objects)
-        self.intake = IntakeService(self.store, self.objects)
+        self.dedup = DedupService(self.store, self.chain)
+        self.intake = IntakeService(self.store, self.objects, dedup=self.dedup)
+        self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
         self.assembler = CaseAssembler(
-            self.store, self.chain, model_for_profile(settings.model_profile)
+            self.store,
+            self.chain,
+            model_for_profile(settings.model_profile),
+            history=self.history,
         )
 
 
