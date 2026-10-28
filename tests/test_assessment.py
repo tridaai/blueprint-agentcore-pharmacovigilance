@@ -252,7 +252,10 @@ def test_clock_board_orders_by_urgency(assessed):
     assert [e.days_remaining for e in deadline_bearing] == sorted(
         e.days_remaining for e in deadline_bearing
     )
-    assert board[0].case_id == f"{C}0301"  # the breached clock leads
+    # The most-breached clock leads: the recurrence case's 15-day
+    # clock ran from its 2025 receipt and is a year past deadline.
+    assert board[0].case_id == f"{C}0105"
+    assert board[0].state == "breached"
 
 
 # ---------------------------------------------------------------------

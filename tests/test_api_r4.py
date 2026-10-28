@@ -51,7 +51,10 @@ def test_clock_board_read(call, assessed):
     assert fatal["deadline"] == "2026-10-21"
     assert by_case["CASE-RPT-2026-0305"]["state"] == "awaiting_assessment"
     assert by_case["CASE-RPT-2026-0305"]["days_remaining"] is None
-    assert board[0]["case_id"] == "CASE-RPT-2026-0301"
+    # Deadline-bearing entries lead, most-breached first: the
+    # recurrence case's clock ran from its 2025 receipt.
+    assert board[0]["case_id"] == "CASE-RPT-2026-0105"
+    assert board[0]["state"] == "breached"
 
 
 def test_rsi_reads(call, assessed):
