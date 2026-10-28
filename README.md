@@ -237,6 +237,61 @@ programme.
   trail, the re-assessment act, the clock board and the RSI
   reads; migration `0004` in both dialects.
 
+## What Round 5 adds
+
+- **Follow-up requests, raised in code** (`pv_cases/followup.py`):
+  every named absence Rounds 1–4 produce becomes tracked work.
+  The validity gate's missing criteria, an uncoded event, and the
+  facts an assessment records as *cannot assess* each raise a
+  request whose items name **exactly** what a follow-up report
+  must supply — the field, and what would satisfy it (the
+  reporter's name/email/phone; the verbatim as reported and its
+  uncoded reason; `events.0.outcome`, blocking the death,
+  hospitalisation and disability criteria). Absences the coding
+  workflow already owns raise no second request. A request is
+  priced a due date by a **versioned follow-up pack** (days per
+  missing class — a missing reporter is 14 days, a missing
+  patient identity or a codable wording 30 — the slowest class
+  governs) and belongs to a case, or to the report that will
+  become one.
+- **Follow-up reports extend the case — never a parallel one.**
+  An answer is a new intake linked to the request: for an
+  existing case it joins the case's evidence chain and folds
+  into the **report of record** (`pv_cases/reporting.py`) under a
+  stated merge rule (a follow-up amends facts; it does not
+  re-identity or re-date the case), and the case is recoded and
+  reassessed over the folded facts. For a validity request the
+  follow-up merges cumulatively over the original report, and
+  the merged report, once valid, **founds the case** through the
+  ordinary intake pipeline, with the original and the follow-up
+  both on its chain as provenance.
+- **Cycles and escalation, recorded as acts.** Requests and
+  their acts are insert-only artefacts; state is derived, never
+  written back. An answer that lands the named fact records a
+  **resolution** (a validity resolution names the case it
+  founded); one that does not records an **attempt** and rolls
+  the due date into the next cycle; an attempt failing at the
+  pack's cycle cap (3) records an **escalation** — the request
+  stands in the named `escalated` state on the board, takes no
+  further reports, and is never silently dropped or duplicated
+  by a later raising scan.
+- **Day zero does not move — and the breach is stated.** A
+  seriousness fact landing on day 20 supersedes the assessment
+  with the change recorded, on a 7-day clock from the original
+  day zero whose deadline is already past: the clock board reads
+  **breached**, and the case summary states the real deadline.
+  A follow-up that matches *another* case under the dedup rule
+  pack links its own case to that case through the usual human
+  queue — flagged, never merged.
+- **Surfaces**: the follow-up board (escalated first, then
+  most-overdue — ageing derived at read time, like the clocks),
+  per-case requests, the request detail with its acts, and the
+  follow-up intake in the API and CLI; the demo walks the
+  day-20 case end to end. Migration `0005` in both dialects.
+  Follow-up requests are internal task artefacts — nothing is
+  sent to any reporter, and nothing is ever submitted to a
+  regulator.
+
 ## Quick start
 
 ```bash
@@ -254,16 +309,26 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 4 of 20.** Built and gate-green: everything in Rounds
-  1–3, plus the assessment layer — the versioned seriousness
-  criteria pack with cannot-assess-never-assumed-negative
-  semantics, expectedness against the RSI stand-in with the
-  specificity trap graded, the clock pack computing obligation
-  classes and deadline dates from an unmoving day zero,
-  insert-only `CaseAssessment` artefacts superseding by link
-  with the change recorded, summaries presenting the verdicts
-  under a code-enforced presentation check, migration 0004, and
-  API/CLI parity for all of it. Round 3 shipped: dictionary
+- **Round 5 of 20.** Built and gate-green: everything in Rounds
+  1–4, plus the follow-up workflow — requests raised in code from
+  the gate's, dictionary's and assessment engine's named
+  absences, each item naming the exact field a follow-up report
+  must supply, due dates priced by the versioned follow-up pack;
+  follow-up reports folding into the report of record and
+  founding cases through ordinary intake; resolutions, rolled
+  attempts and cap escalations as insert-only acts with state
+  derived in code; day zero unmoved with breaches stated out
+  loud; migration 0005, and API/CLI parity for all of it.
+  Round 4 shipped: the assessment layer — the versioned
+  seriousness criteria pack with
+  cannot-assess-never-assumed-negative semantics, expectedness
+  against the RSI stand-in with the specificity trap graded, the
+  clock pack computing obligation classes and deadline dates
+  from an unmoving day zero, insert-only `CaseAssessment`
+  artefacts superseding by link with the change recorded,
+  summaries presenting the verdicts under a code-enforced
+  presentation check, migration 0004, and API/CLI parity for all
+  of it. Round 3 shipped: dictionary
   coding — the tiered lookup with recorded match paths, pinned
   `CodingDecision` artefacts, the uncoded review queue with named
   coder resolutions, dictionary additions as new versions only,

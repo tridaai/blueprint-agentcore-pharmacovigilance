@@ -98,13 +98,27 @@ other blueprints already cover the LangGraph pattern.
    the coding decisions they read; a changed case supersedes by
    link with the change recorded, and a summary misstating the
    current artefact's verdicts or deadline is refused in code.
+9. (R5) A deficiency a follow-up report can cure is a tracked
+   request, raised in code from the gate's, dictionary's and
+   assessment engine's own outputs — never a generic "more info
+   needed": each item names the field and what would satisfy it,
+   and the due date is the follow-up pack's price for the
+   slowest class. Follow-up reports extend the case they answer
+   (the report of record is the intake payload folded with the
+   chain's follow-up payloads under a stated merge rule; a
+   validity follow-up founds its case through the same intake
+   pipeline) — there is no parallel-case path. Requests and
+   acts are insert-only; state, cycle and ageing are derived
+   from the acts in code; an attempt failing at the pack's
+   cycle cap escalates to a named state rather than expiring,
+   and decided requests take no further reports.
 
 ## Round map
 
 The full 20-round map lives in the design brief
 (`blueprint-17-agentcore-pharmacovigilance-design.md` in the goal
 files): de-duplication (R2), coding dictionary (R3), seriousness +
-expectedness (R4), narrative + verifier depth (R5), reviewer gate
+expectedness (R4), follow-up workflow (R5), medical-reviewer gate
 (R6), sealing/export (R7), clocks (R8–R9), quarantine (R10), Memory
 (R11), Gateway + Policy (R12), model gateway + cost ledger (R13),
 console (R14), traps (R15), Postgres profile + prod smoke (R16),

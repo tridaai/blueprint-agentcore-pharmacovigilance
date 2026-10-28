@@ -1,4 +1,4 @@
-"""Eval gate — Rounds 1–4 (pharmacovigilance case agent).
+"""Eval gate — Rounds 1–5 (pharmacovigilance case agent).
 
 Runs the planted feed through the real service graph on a throwaway
 SQLite store and grades the guarantees. Every counter is
@@ -97,6 +97,33 @@ over the full book plus the assessment fixtures:
                                  that lacks the assessment
                                  statements entirely
 
+Round 5 (the follow-up workflow), graded over the book plus the
+follow-up fixtures:
+  followup_tasks_missing_or_wrong a request the planted
+                                 deficiencies must raise is absent,
+                                 or names the wrong fields/classes,
+                                 or a complete case carries one
+  followup_closure_without_qualifying_report a request resolved
+                                 by a follow-up that did not land
+                                 its fact, or a decided request
+                                 accepting another report
+  followup_escalation_missing    the escalation fixture's request
+                                 not escalated at the cycle cap,
+                                 or duplicated by the raising scan
+  followup_day_zero_moved        a follow-up moving a case's day
+                                 zero, or the day-20 case's new
+                                 deadline differing from day zero + 7
+  followup_breach_hidden         the day-20 case's clock not
+                                 stated breached at the follow-up
+                                 date, or a summary misstating it
+  unresolved_task_ageing_wrong   the board's derived states /
+                                 days-overdue differing from hand
+                                 truth at a graded as_of
+  followup_merges_or_losses      cases lost or chains broken by
+                                 follow-ups, the founded case not
+                                 linked as a suspected duplicate,
+                                 or in-place edits of requests/acts
+
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
 
@@ -117,10 +144,13 @@ from pv_cases.models import (  # noqa: E402
     CaseStatus,
     DedupBand,
 )
+from pv_cases.followup import FollowUpError  # noqa: E402
 from pv_cases.seed import (  # noqa: E402
     assessment_fixtures,
     coding_fixtures,
     dedup_fixtures,
+    followup_fixtures,
+    followup_reports,
     reference_feed,
 )
 from pv_cases.validity import assess_validity  # noqa: E402
@@ -683,7 +713,207 @@ def main() -> int:
     edits += settled.supersedes_id != pinned_before["decision_id"]
     counters["dictionary_in_place_edits"] = edits
 
-    print("Rounds 1–4 evals — pharmacovigilance case agent")
+    # ---------------- Round 5: the follow-up workflow ----------------
+    # Requests are raised in code from the gate's, the dictionary's
+    # and the assessment engine's outputs, and answered only by
+    # follow-up reports. Graded over the book plus the planted
+    # follow-up fixtures, against hand-derived truth.
+    cases_before_r5 = len(svc.store.list_cases())
+    for report in followup_fixtures():
+        svc.intake.ingest(report, DAY)
+    answers = followup_reports()
+
+    tasks_wrong = 0
+    f1_task = svc.store.get_follow_up_request(f"FUP-{C}0401-A")
+    tasks_wrong += f1_task is None
+    if f1_task is not None:
+        tasks_wrong += f1_task.source != "assessment"
+        tasks_wrong += [
+            (i.item_class, i.field) for i in f1_task.items
+        ] != [("missing_case_fact", "events.0.outcome")]
+        tasks_wrong += f1_task.items[0].blocks != [
+            "death",
+            "hospitalisation",
+            "disability",
+        ]
+        tasks_wrong += f1_task.due_on != date(2026, 10, 26)  # DAY + 14
+    f2_task = svc.store.get_follow_up_request(f"FUP-{C}0411-E0")
+    tasks_wrong += f2_task is None
+    if f2_task is not None:
+        tasks_wrong += f2_task.source != "coding"
+        tasks_wrong += f2_task.items[0].verbatim != "Rash across both hands"
+        tasks_wrong += f2_task.due_on != date(2026, 11, 11)  # DAY + 30
+    f3_task = svc.store.get_follow_up_request("FUP-RPT-2026-0431")
+    tasks_wrong += f3_task is None
+    if f3_task is not None:
+        tasks_wrong += [
+            (i.item_class, i.field) for i in f3_task.items
+        ] != [("identifiable_reporter", "reporter")]
+    # The book's split, exactly: 0305's absent outcome and 0205's
+    # unidentified product raise assessment requests; the uncoded
+    # cases raise coding requests and no assessment request; a
+    # complete case raises nothing.
+    tasks_wrong += svc.store.get_follow_up_request(f"FUP-{C}0305-A") is None
+    tasks_wrong += svc.store.get_follow_up_request(f"FUP-{C}0306-A") is not None
+    tasks_wrong += len(svc.followup.tasks_for_case(f"{C}0304", DAY)) != 0
+    tasks_wrong += len(svc.followup.tasks_for_case(f"{C}0001", DAY)) != 0
+    counters["followup_tasks_missing_or_wrong"] = tasks_wrong
+
+    # Closure discipline: a follow-up that does not land the fact
+    # records an attempt, never a resolution; the one that lands
+    # it resolves, and a decided request takes no more reports.
+    closure_wrong = 0
+    f2_before = svc.store.get_follow_up_request(f"FUP-{C}0411-E0").model_dump()
+    sub = svc.followup.submit_follow_up(
+        f"FUP-{C}0411-E0", answers["RPT-2026-0412"], date(2026, 10, 16)
+    )
+    closure_wrong += sub.outcome != "attempt" or sub.cycle != 2
+    closure_wrong += sub.due_on != date(2026, 11, 15)
+    closure_wrong += (
+        svc.followup.view(f"FUP-{C}0411-E0", date(2026, 10, 16)).state != "open"
+    )
+    sub = svc.followup.submit_follow_up(
+        f"FUP-{C}0411-E0", answers["RPT-2026-0413"], date(2026, 10, 28)
+    )
+    closure_wrong += sub.outcome != "resolution"
+    try:
+        svc.followup.submit_follow_up(
+            f"FUP-{C}0411-E0", answers["RPT-2026-0413"], date(2026, 10, 29)
+        )
+        closure_wrong += 1  # a resolved request accepted another report
+    except FollowUpError:
+        pass
+    counters["followup_closure_without_qualifying_report"] = closure_wrong
+
+    # Requests and acts are insert-only artefacts: the attempt
+    # above left the request artefact byte-identical, and the
+    # store port grows no update or delete for either table.
+    edits = sum(
+        1
+        for verb in (
+            "update_follow_up_request",
+            "delete_follow_up_request",
+            "update_follow_up_act",
+            "delete_follow_up_act",
+        )
+        if hasattr(svc.store, verb)
+    )
+    edits += (
+        svc.store.get_follow_up_request(f"FUP-{C}0411-E0").model_dump()
+        != f2_before
+    )
+
+    # The day-20 story: the fact lands after the clock it creates
+    # has already run out. Day zero does not move, the deadline is
+    # day zero + 7, and the breach is stated — on the board and in
+    # the summary.
+    day_zero_wrong = 0
+    breach_hidden = 0
+    svc.followup.submit_follow_up(
+        f"FUP-{C}0401-A", answers["RPT-2026-0402"], date(2026, 10, 25)
+    )
+    artefact = svc.assessment.current_assessment(f"{C}0401")
+    day_zero_wrong += artefact.clock.day_zero != date(2026, 10, 5)
+    from datetime import timedelta as _td
+
+    day_zero_wrong += artefact.clock.deadline != date(2026, 10, 5) + _td(days=7)
+    day_zero_wrong += artefact.change != {
+        "seriousness": ["cannot_assess", "serious"],
+        "obligation_class": ["awaiting_assessment", "expedited_7_day"],
+        "deadline": [None, "2026-10-12"],
+    }
+    entry = next(
+        e
+        for e in svc.assessment.clock_board(date(2026, 10, 25))
+        if e.case_id == f"{C}0401"
+    )
+    breach_hidden += (entry.state, entry.days_remaining) != ("breached", -13)
+    summary = svc.assembler.assemble(f"{C}0401", date(2026, 10, 25))
+    breach_hidden += len(
+        assessment_presentation_problems(artefact, summary.statements)
+    )
+    breach_hidden += (
+        0
+        if any(
+            "deadline 2026-10-12" in s.text for s in summary.statements
+        )
+        else 1
+    )
+    counters["followup_day_zero_moved"] = day_zero_wrong
+    counters["followup_breach_hidden"] = breach_hidden
+
+    # Escalation: three failed attempts land the request in the
+    # named escalated state at the pack's cap; the raising scan
+    # does not duplicate it and it takes no further reports.
+    escalation_wrong = 0
+    outcomes = [
+        svc.followup.submit_follow_up(
+            f"FUP-{C}0421-E0", answers[rid], day
+        ).outcome
+        for rid, day in (
+            ("RPT-2026-0422", date(2026, 10, 17)),
+            ("RPT-2026-0423", date(2026, 10, 27)),
+            ("RPT-2026-0424", date(2026, 11, 6)),
+        )
+    ]
+    escalation_wrong += outcomes != ["attempt", "attempt", "escalation"]
+    escalation_wrong += (
+        svc.followup.view(f"FUP-{C}0421-E0", date(2026, 11, 6)).state
+        != "escalated"
+    )
+    escalation_wrong += len(
+        svc.followup.raise_for_case(f"{C}0421", date(2026, 11, 20))
+    )
+    try:
+        svc.followup.submit_follow_up(
+            f"FUP-{C}0421-E0", answers["RPT-2026-0424"], date(2026, 11, 7)
+        )
+        escalation_wrong += 1  # an escalated request accepted a report
+    except FollowUpError:
+        pass
+    counters["followup_escalation_missing"] = escalation_wrong
+
+    # A validity follow-up founds its case — flagged and linked as
+    # a suspected duplicate, never merged; no case is lost and
+    # every chain still verifies.
+    losses = 0
+    sub = svc.followup.submit_follow_up(
+        "FUP-RPT-2026-0431", answers["RPT-2026-0432"], date(2026, 10, 15)
+    )
+    losses += sub.new_case_id != f"{C}0432"
+    founded = svc.store.get_case(f"{C}0432")
+    losses += founded is None
+    if founded is not None:
+        losses += founded.suspected_duplicate_of != f"{C}0005"
+        losses += founded.awareness_date != date(2026, 10, 15)
+    losses += (
+        svc.store.get_dedup_link(f"LINK-{C}0005-{C}0432") is None
+    )
+    # +3 valid originals (0401, 0411, 0421) and +1 founded case.
+    losses += len(svc.store.list_cases()) != cases_before_r5 + 4
+    losses += sum(
+        1 for case in svc.store.list_cases() if not svc.chain.verify_chain(case.case_id)
+    )
+    counters["followup_merges_or_losses"] = losses + edits
+
+    # Ageing is derived, exactly: the feed's reporter request is
+    # 25 days overdue at the graded date, the escalated request
+    # does not age, the resolved ones stand resolved.
+    board = {e.task_id: e for e in svc.followup.board(date(2026, 11, 20))}
+    ageing_wrong = 0
+    ageing_wrong += (board["FUP-RPT-2026-0003"].state, board["FUP-RPT-2026-0003"].days_overdue) != (
+        "overdue",
+        25,
+    )
+    ageing_wrong += (board[f"FUP-{C}0421-E0"].state, board[f"FUP-{C}0421-E0"].days_overdue) != (
+        "escalated",
+        0,
+    )
+    ageing_wrong += board[f"FUP-{C}0401-A"].state != "resolved"
+    ageing_wrong += board["FUP-RPT-2026-0431"].state != "resolved"
+    counters["unresolved_task_ageing_wrong"] = ageing_wrong
+
+    print("Rounds 1–5 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]
