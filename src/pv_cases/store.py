@@ -18,6 +18,7 @@ from typing import Protocol
 from pv_cases.migrations import apply_migrations
 from pv_cases.models import (
     Case,
+    CaseAssessment,
     CaseSummary,
     CodingDecision,
     CodingReviewTask,
@@ -28,6 +29,7 @@ from pv_cases.models import (
     FollowUpTask,
     PatientHistoryView,
     ProductHistoryView,
+    ReferenceSafetyInfo,
 )
 
 
@@ -67,6 +69,15 @@ class CaseStore(Protocol):
     def get_coding_task(self, task_id: str) -> CodingReviewTask | None: ...
     def list_coding_tasks(self, status: str | None = None) -> list[CodingReviewTask]: ...
     def update_coding_task(self, task: CodingReviewTask) -> None: ...
+    # Round 4: reference safety information + case assessments.
+    # Insert-only, like the dictionary — there is deliberately no
+    # update or delete here, so a stored verdict can never be
+    # edited in place; change arrives as a superseding artefact.
+    def add_rsi_version(self, rsi: ReferenceSafetyInfo) -> None: ...
+    def get_rsi_version(self, version: str) -> ReferenceSafetyInfo | None: ...
+    def list_rsi_versions(self) -> list[ReferenceSafetyInfo]: ...
+    def add_assessment(self, assessment: CaseAssessment) -> None: ...
+    def list_assessments(self, case_id: str | None = None) -> list[CaseAssessment]: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -476,6 +487,60 @@ class SqlCaseStore:
             (task.status.value, task.model_dump_json(), task.task_id),
         )
 
+    # -- seriousness / expectedness / clocks (Round 4) ------------
+    def add_rsi_version(self, rsi: ReferenceSafetyInfo) -> None:
+        self._run(
+            "INSERT INTO reference_safety_info (version, created_on, payload)"
+            " VALUES (?,?,?)",
+            (rsi.version, rsi.created_on.isoformat(), rsi.model_dump_json()),
+        )
+
+    def get_rsi_version(self, version: str) -> ReferenceSafetyInfo | None:
+        row = self._run(
+            "SELECT payload FROM reference_safety_info WHERE version = ?",
+            (version,),
+            fetch="one",
+        )
+        return ReferenceSafetyInfo.model_validate_json(row[0]) if row else None
+
+    def list_rsi_versions(self) -> list[ReferenceSafetyInfo]:
+        rows = self._run(
+            "SELECT payload FROM reference_safety_info ORDER BY version",
+            fetch="all",
+        )
+        return [ReferenceSafetyInfo.model_validate_json(r[0]) for r in rows]
+
+    def add_assessment(self, assessment: CaseAssessment) -> None:
+        self._run(
+            "INSERT INTO case_assessments (assessment_id, case_id, seriousness,"
+            " expectedness, obligation_class, deadline, payload)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (
+                assessment.assessment_id,
+                assessment.case_id,
+                assessment.seriousness.value,
+                assessment.expectedness.value,
+                assessment.clock.obligation_class,
+                assessment.clock.deadline.isoformat() if assessment.clock.deadline else None,
+                assessment.model_dump_json(),
+            ),
+        )
+
+    def list_assessments(self, case_id: str | None = None) -> list[CaseAssessment]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM case_assessments ORDER BY assessment_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM case_assessments WHERE case_id = ?"
+                " ORDER BY assessment_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [CaseAssessment.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -491,6 +556,8 @@ class InMemoryCaseStore:
         self.dictionary_versions: dict[str, DictionaryVersion] = {}
         self.coding_decisions: dict[str, CodingDecision] = {}
         self.coding_tasks: dict[str, CodingReviewTask] = {}
+        self.rsi_versions: dict[str, ReferenceSafetyInfo] = {}
+        self.assessments: dict[str, CaseAssessment] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -601,3 +668,21 @@ class InMemoryCaseStore:
 
     def update_coding_task(self, task: CodingReviewTask) -> None:
         self.coding_tasks[task.task_id] = task
+
+    def add_rsi_version(self, rsi: ReferenceSafetyInfo) -> None:
+        self.rsi_versions[rsi.version] = rsi
+
+    def get_rsi_version(self, version: str) -> ReferenceSafetyInfo | None:
+        return self.rsi_versions.get(version)
+
+    def list_rsi_versions(self) -> list[ReferenceSafetyInfo]:
+        return [self.rsi_versions[k] for k in sorted(self.rsi_versions)]
+
+    def add_assessment(self, assessment: CaseAssessment) -> None:
+        self.assessments[assessment.assessment_id] = assessment
+
+    def list_assessments(self, case_id: str | None = None) -> list[CaseAssessment]:
+        items = [self.assessments[k] for k in sorted(self.assessments)]
+        if case_id is not None:
+            items = [a for a in items if a.case_id == case_id]
+        return items

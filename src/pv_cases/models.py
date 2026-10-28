@@ -489,6 +489,180 @@ class CodingDecision(BaseModel):
     coded_on: date
 
 
+# ---------------------------------------------------------------------
+# Round 4: seriousness, expectedness, regulatory clocks.
+#
+# A *case assessment* is the seriousness + expectedness + clock
+# verdict on one case, computed in code from the case's coded facts
+# under three versioned packs (the seriousness criteria pack, the
+# reference safety information, the clock pack). Like a coding
+# decision it is an insert-only artefact: when the facts it read
+# change, a new assessment supersedes the old one by link, with the
+# change recorded — the old verdict stays readable, because a clock
+# that was reported against is itself evidence.
+# ---------------------------------------------------------------------
+
+# The six ICH seriousness criteria, in the order the engine
+# evaluates and reports them.
+CRITERION_DEATH = "death"
+CRITERION_LIFE_THREATENING = "life_threatening"
+CRITERION_HOSPITALISATION = "hospitalisation"
+CRITERION_DISABILITY = "disability"
+CRITERION_CONGENITAL = "congenital_anomaly"
+CRITERION_OTHER_IMPORTANT = "other_medically_important"
+SERIOUSNESS_CRITERIA = [
+    CRITERION_DEATH,
+    CRITERION_LIFE_THREATENING,
+    CRITERION_HOSPITALISATION,
+    CRITERION_DISABILITY,
+    CRITERION_CONGENITAL,
+    CRITERION_OTHER_IMPORTANT,
+]
+
+
+class CriterionStatus(str, Enum):
+    FIRED = "fired"
+    NOT_FIRED = "not_fired"
+    # The fact that would decide this criterion is absent from the
+    # record. Named, never assumed negative.
+    CANNOT_ASSESS = "cannot_assess"
+
+
+class CriterionFinding(BaseModel):
+    """One criterion's verdict for one case. Exactly one of
+    ``deciding_fact`` (what fired it) / ``missing_fact`` (what
+    absence blocks it) is set when the status is fired /
+    cannot_assess; a not-fired criterion read real facts and found
+    none of them positive."""
+
+    criterion: str
+    status: CriterionStatus
+    deciding_fact: str | None = None
+    missing_fact: str | None = None
+    detail: str = ""
+
+
+class SeriousnessOutcome(str, Enum):
+    SERIOUS = "serious"
+    NON_SERIOUS = "non_serious"
+    CANNOT_ASSESS = "cannot_assess"
+
+
+class Expectedness(str, Enum):
+    EXPECTED = "expected"
+    UNEXPECTED = "unexpected"
+    CANNOT_ASSESS = "cannot_assess"
+
+
+# Expectedness bases (EventExpectedness.basis).
+EXP_LABELLED = "labelled_term"
+EXP_MORE_SPECIFIC = "more_specific_than_labelled"
+EXP_NOT_IN_LABEL = "not_in_label"
+EXP_EVENT_UNCODED = "event_uncoded"
+EXP_PRODUCT_UNIDENTIFIED = "product_not_identified"
+
+
+class EventExpectedness(BaseModel):
+    """One event's expectedness against the reference safety
+    information for the case's product."""
+
+    event_index: int
+    coding_decision_id: str
+    preferred_term: str | None = None
+    status: Expectedness
+    basis: str  # one of the EXP_* constants above
+    labelled_term: str | None = None
+
+
+# Reporting obligation classes (ReportingClock.obligation_class).
+OBLIGATION_7_DAY = "expedited_7_day"
+OBLIGATION_15_DAY = "expedited_15_day"
+OBLIGATION_PERIODIC = "periodic"
+OBLIGATION_AWAITING = "awaiting_assessment"
+
+
+class ReportingClock(BaseModel):
+    """The case's reporting obligation, computed in code. Day zero
+    is stated by the clock pack's rule (the first valid receipt
+    date — the case's awareness date) and never moves, even when a
+    later assessment supersedes this one."""
+
+    obligation_class: str
+    day_zero: date
+    deadline: date | None = None
+    clock_pack_version: str
+    basis: str = ""
+
+
+class CaseAssessment(BaseModel):
+    """The seriousness + expectedness + clock verdict on one case,
+    pinned to exactly what it read: the report (by fingerprint),
+    the current coding decisions (by id), and the three pack
+    versions. Immutable once stored; a re-assessment over changed
+    inputs is a new artefact superseding this one by link."""
+
+    assessment_id: str
+    case_id: str
+    criteria_pack_version: str
+    rsi_version: str
+    clock_pack_version: str
+    product_code: str | None = None
+    coding_decision_ids: list[str] = Field(default_factory=list)
+    input_fingerprint: str
+    seriousness: SeriousnessOutcome
+    criteria: list[CriterionFinding] = Field(default_factory=list)
+    expectedness: Expectedness
+    event_expectedness: list[EventExpectedness] = Field(default_factory=list)
+    clock: ReportingClock
+    # What changed versus the superseded assessment:
+    # {field: [old, new]} over seriousness / expectedness /
+    # obligation_class / deadline. None for a first assessment;
+    # an empty dict means the inputs moved but the verdicts did not.
+    change: dict | None = None
+    supersedes_id: str | None = None
+    assessed_on: date
+
+
+class ClockBoardEntry(BaseModel):
+    """One case's clock as read on a board at an explicit ``as_of``:
+    the state and the days remaining are derived at read time from
+    the stored clock artefact — never stored themselves."""
+
+    case_id: str
+    assessment_id: str
+    seriousness: SeriousnessOutcome
+    expectedness: Expectedness
+    obligation_class: str
+    day_zero: date
+    deadline: date | None = None
+    days_remaining: int | None = None
+    state: str  # within_clock | due_today | breached | the class itself when no deadline
+
+
+class LabelledTerm(BaseModel):
+    """One labelled event term in the reference safety information:
+    the term the product's label covers, and the coded terms that
+    are MORE specific/severe than the label covers — an event coded
+    to one of those is unexpected even though its base term is
+    labelled."""
+
+    preferred_term: str
+    more_specific_terms: list[str] = Field(default_factory=list)
+
+
+class ReferenceSafetyInfo(BaseModel):
+    """The versioned reference safety information extract — a
+    repo-built stand-in for each product's real label (the
+    company core data sheet). Immutable once stored, like the
+    dictionary it parallels."""
+
+    version: str
+    created_on: date
+    created_by: str
+    note: str = ""
+    products: dict[str, list[LabelledTerm]] = Field(default_factory=dict)
+
+
 class CodingReviewStatus(str, Enum):
     OPEN = "open"
     RESOLVED = "resolved"
