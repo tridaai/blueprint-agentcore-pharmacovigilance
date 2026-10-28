@@ -281,9 +281,12 @@ class FollowUpService:
         return f"{base}-{n}"
 
     def _raise(self, task: FollowUpRequest) -> FollowUpRequest | None:
-        """Store a request unless an unresolved one with the same
-        key (source + case/report + subject) already stands — the
-        raising scan is idempotent over unchanged deficiencies."""
+        """Store a request unless one with the same key (source +
+        case/report + subject) already stands open — or escalated.
+        The raising scan is idempotent over unchanged deficiencies;
+        a resolved deficiency that genuinely recurs is new work,
+        but an escalated request is already with the human queue
+        and is never silently duplicated by a later scan."""
         for existing in self.store.list_follow_up_requests():
             if (
                 existing.source == task.source
@@ -291,10 +294,7 @@ class FollowUpService:
                 and existing.case_id == task.case_id
                 and existing.subject_index == task.subject_index
             ):
-                if self._derive(existing, task.raised_on).state not in (
-                    FU_STATE_RESOLVED,
-                    FU_STATE_ESCALATED,
-                ):
+                if self._derive(existing, task.raised_on).state != FU_STATE_RESOLVED:
                     return None
         self.store.add_follow_up_request(task)
         return task
