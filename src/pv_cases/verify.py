@@ -57,6 +57,7 @@ from pv_cases.models import (
     SEAL_KIND_SUMMARY,
     PackageCheck,
     VerificationReport,
+    normalise_text,
 )
 
 
@@ -254,7 +255,12 @@ def verify_package(package) -> VerificationReport:
                 f"act {act_id} binds a different record than the seal binds"
             )
         reviewers[role] = act.get("reviewer")
-    if len(set(reviewers.values())) != len(reviewers):
+    if len(
+        {normalise_text(str(v)) for v in reviewers.values()}
+    ) != len(reviewers):
+        # Compared under the same normalise_text folding the
+        # review service uses (Round 9, RT-25): a name variant
+        # is the same person here too.
         problems.append(
             "the two roles were accepted by the same person — dual"
             " control was not satisfied"

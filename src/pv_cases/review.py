@@ -32,7 +32,11 @@ case's current record.
 - **Dual control is refused in code, at recording time**: the
   same person may not hold a current act in both roles on one
   case. One role's accept alone leaves the case visibly
-  `awaiting_second_review` on every read.
+  `awaiting_second_review` on every read. "Same person" is
+  judged under the repo's `normalise_text` folding (Round 9,
+  RT-25) — a case or punctuation variant of the same name is
+  the same person, at recording, in the derived state, and in
+  the offline export verifier.
 
 The review states are internal workflow states. `medically_
 reviewed` means two named reviewers accepted this record inside
@@ -70,6 +74,7 @@ from pv_cases.models import (
     ReviewBinding,
     ReviewQueueEntry,
     is_named_human,
+    normalise_text,
     seal_refusal_text,
 )
 
@@ -307,9 +312,15 @@ class ReviewService:
         # Dual control: one person, one role. A current act by the
         # same reviewer in the OTHER role refuses this one; a stale
         # act binds a record that no longer stands and refuses
-        # nothing.
+        # nothing. Reviewer identity is compared under the repo's
+        # normalise_text folding (Round 9, RT-25): "Dr A. Rao" and
+        # "dr a rao" are the same person for this rule — a case
+        # variant must not satisfy dual control alone.
         for other in self.store.list_review_acts(case_id):
-            if other.reviewer != reviewer or other.role == role:
+            if (
+                normalise_text(other.reviewer) != normalise_text(reviewer)
+                or other.role == role
+            ):
                 continue
             other_stale, _ = self._staleness(other, bindings)
             if not other_stale:
@@ -372,7 +383,9 @@ class ReviewService:
         if holds:
             hold = holds[0]
             state = REVIEW_STATE_HOLD
-        elif not missing and len(set(accepted.values())) == len(REVIEW_ROLES):
+        elif not missing and len(
+            {normalise_text(v) for v in accepted.values()}
+        ) == len(REVIEW_ROLES):
             state = REVIEW_STATE_REVIEWED
         elif accepted:
             state = REVIEW_STATE_AWAITING_SECOND
