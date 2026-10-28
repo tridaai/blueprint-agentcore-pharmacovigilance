@@ -814,6 +814,128 @@ class FollowUpSubmission(BaseModel):
     links_created: list[str] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------
+# Round 6: medical review — dual control.
+#
+# A *medical review act* is one named reviewer's recorded decision
+# on one case's current record: the assessment, the coding
+# decisions and the assembled summary, each bound by id and hash at
+# the moment of the act. Acts are insert-only artefacts, stored in
+# the case store and recorded on the case's evidence chain; a
+# case's review state is derived from its acts in code, never
+# written back. Dual control (design Law 5) is mechanical: the
+# gate completes only on current accept acts from both reviewer
+# roles, recorded by two distinct people.
+# ---------------------------------------------------------------------
+
+# Reviewer roles (the review pack's role list).
+REVIEW_ROLE_MEDICAL = "medical_reviewer"
+REVIEW_ROLE_SAFETY = "safety_reviewer"
+REVIEW_ROLES = [REVIEW_ROLE_MEDICAL, REVIEW_ROLE_SAFETY]
+
+# Review decisions. A reject must carry its reason and an
+# accept-with-comment its comment — the rationale is part of the
+# act, not an afterthought.
+REVIEW_ACCEPT = "accept"
+REVIEW_ACCEPT_WITH_COMMENT = "accept_with_comment"
+REVIEW_REJECT = "reject_with_reason"
+REVIEW_DECISIONS = [REVIEW_ACCEPT, REVIEW_ACCEPT_WITH_COMMENT, REVIEW_REJECT]
+REVIEW_ACCEPT_DECISIONS = [REVIEW_ACCEPT, REVIEW_ACCEPT_WITH_COMMENT]
+
+# Derived case review states.
+REVIEW_STATE_AWAITING_FIRST = "awaiting_first_review"
+REVIEW_STATE_AWAITING_SECOND = "awaiting_second_review"
+REVIEW_STATE_REVIEWED = "medically_reviewed"
+REVIEW_STATE_HOLD = "review_hold"
+
+# Review queue buckets: the four kinds of review work. A stale
+# case is one whose recorded acts no longer bind the current
+# record and which holds no current accept — it needs a fresh
+# review, and the queue says so separately from never-reviewed
+# work.
+REVIEW_BUCKET_HOLD = "review_hold"
+REVIEW_BUCKET_AWAITING_SECOND = "awaiting_second_review"
+REVIEW_BUCKET_STALE = "stale_review"
+REVIEW_BUCKET_AWAITING_FIRST = "awaiting_first_review"
+
+
+class ReviewBinding(BaseModel):
+    """One artefact a review act binds: its kind, its id, and a
+    hash of the exact version reviewed. For the summary the hash
+    covers the narrative content (statements + model profile) —
+    summary ids are per-assembly sequence numbers, not versions,
+    so a re-assembly of identical text is the same narrative,
+    while any change to the text is a new one."""
+
+    artefact_kind: str  # assessment | coding_decision | summary
+    artefact_id: str
+    artefact_hash: str
+
+
+class MedicalReviewAct(BaseModel):
+    """One reviewer's decision on one case, recorded once and
+    never edited. The act binds the record it reviewed; when any
+    bound artefact is superseded the act goes stale — it stays on
+    the trail, labelled, and stops counting toward the gate."""
+
+    act_id: str
+    case_id: str
+    reviewer: str
+    role: str  # REVIEW_ROLE_*
+    decision: str  # REVIEW_DECISIONS
+    rationale: str = ""
+    pack_version: str
+    bindings: list[ReviewBinding] = Field(default_factory=list)
+    recorded_on: date
+
+
+class ReviewActView(BaseModel):
+    """One act read against the case's current record: whether it
+    still binds that record, and — when it does not — the ids of
+    the artefacts that superseded the ones it bound."""
+
+    act: MedicalReviewAct
+    stale: bool
+    superseded_by: list[str] = Field(default_factory=list)
+
+
+class CaseReviewView(BaseModel):
+    """A case's review position, derived from its acts: the state,
+    which roles hold a current accept (and by whom), which roles
+    are still missing, and — on a hold — the rejecting act and its
+    reason, on the case's face."""
+
+    case_id: str
+    state: str  # REVIEW_STATE_*
+    pack_version: str
+    accepted_roles: dict[str, str] = Field(default_factory=dict)
+    missing_roles: list[str] = Field(default_factory=list)
+    hold_act_id: str | None = None
+    hold_by: str | None = None
+    hold_role: str | None = None
+    hold_reason: str | None = None
+    has_stale_acts: bool = False
+    acts: list[ReviewActView] = Field(default_factory=list)
+
+
+class ReviewQueueEntry(BaseModel):
+    """One row of the medical-review queue. PHI minimisation is
+    structural: the entry carries the case id, its seriousness,
+    expectedness and clock position, and its review state —
+    nothing that identifies the patient or the reporter."""
+
+    case_id: str
+    bucket: str  # REVIEW_BUCKET_*
+    review_state: str
+    seriousness: str | None = None
+    expectedness: str | None = None
+    obligation_class: str | None = None
+    clock_state: str | None = None
+    deadline: date | None = None
+    days_remaining: int | None = None
+    has_stale_acts: bool = False
+
+
 class CodingReviewStatus(str, Enum):
     OPEN = "open"
     RESOLVED = "resolved"

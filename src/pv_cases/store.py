@@ -29,6 +29,7 @@ from pv_cases.models import (
     FollowUpAct,
     FollowUpRequest,
     FollowUpTask,
+    MedicalReviewAct,
     PatientHistoryView,
     ProductHistoryView,
     ReferenceSafetyInfo,
@@ -89,6 +90,12 @@ class CaseStore(Protocol):
     def list_follow_up_requests(self, case_id: str | None = None) -> list: ...
     def add_follow_up_act(self, act) -> None: ...
     def list_follow_up_acts(self, task_id: str | None = None) -> list: ...
+    # Round 6: medical review acts. Insert-only, like the
+    # assessments — there is deliberately no update or delete
+    # here; a case's review state is derived from its acts in
+    # code, never written back.
+    def add_review_act(self, act: MedicalReviewAct) -> None: ...
+    def list_review_acts(self, case_id: str | None = None) -> list[MedicalReviewAct]: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -613,6 +620,37 @@ class SqlCaseStore:
             )
         return [FollowUpAct.model_validate_json(r[0]) for r in rows]
 
+    # -- medical review (Round 6) ----------------------------------
+    def add_review_act(self, act: MedicalReviewAct) -> None:
+        self._run(
+            "INSERT INTO medical_review_acts (act_id, case_id, reviewer,"
+            " role, payload) VALUES (?,?,?,?,?)",
+            (
+                act.act_id,
+                act.case_id,
+                act.reviewer,
+                act.role,
+                act.model_dump_json(),
+            ),
+        )
+
+    def list_review_acts(
+        self, case_id: str | None = None
+    ) -> list[MedicalReviewAct]:
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM medical_review_acts ORDER BY act_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM medical_review_acts WHERE case_id = ?"
+                " ORDER BY act_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [MedicalReviewAct.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -632,6 +670,7 @@ class InMemoryCaseStore:
         self.assessments: dict[str, CaseAssessment] = {}
         self.follow_up_requests: dict[str, FollowUpRequest] = {}
         self.follow_up_acts: dict[str, FollowUpAct] = {}
+        self.review_acts: dict[str, MedicalReviewAct] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -782,4 +821,15 @@ class InMemoryCaseStore:
         items = [self.follow_up_acts[k] for k in sorted(self.follow_up_acts)]
         if task_id is not None:
             items = [a for a in items if a.task_id == task_id]
+        return items
+
+    def add_review_act(self, act: MedicalReviewAct) -> None:
+        self.review_acts[act.act_id] = act
+
+    def list_review_acts(
+        self, case_id: str | None = None
+    ) -> list[MedicalReviewAct]:
+        items = [self.review_acts[k] for k in sorted(self.review_acts)]
+        if case_id is not None:
+            items = [a for a in items if a.case_id == case_id]
         return items
