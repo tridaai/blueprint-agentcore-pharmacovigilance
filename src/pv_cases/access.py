@@ -133,6 +133,12 @@ SURFACE_PACKS = "packs"
 # roles and the auditor read them; intake and case admin do
 # not (an aggregate is not a licence either).
 SURFACE_OVERSIGHT = "oversight"
+# Round 12: the model gateway's cost ledger — a case-scoped
+# read surface like the summary it prices: the case-working
+# roles and the auditor read a case's ledger; intake and case
+# admin do not, and a refused read is existence-hidden exactly
+# as every other case-scoped read is.
+SURFACE_MODEL_LEDGER = "model_ledger"
 SURFACES = [
     SURFACE_CASE,
     SURFACE_EVIDENCE,
@@ -151,6 +157,7 @@ SURFACES = [
     SURFACE_DENIAL_LOG,
     SURFACE_PACKS,
     SURFACE_OVERSIGHT,
+    SURFACE_MODEL_LEDGER,
 ]
 
 # Acts — the named operations the pack gates. These are the
@@ -290,6 +297,7 @@ _CASEWORK_READS = [
     SURFACE_DEDUP,
     SURFACE_PACKS,
     SURFACE_OVERSIGHT,
+    SURFACE_MODEL_LEDGER,
 ]
 
 ACCESS_PACK_V1 = AccessPack(
