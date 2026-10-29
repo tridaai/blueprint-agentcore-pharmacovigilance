@@ -32,6 +32,7 @@ from pv_cases.access import (
     SURFACE_GATEWAY,
     SURFACE_HISTORY,
     SURFACE_MEMORY,
+    SURFACE_MODEL_LEDGER,
     SURFACE_OVERSIGHT,
     SURFACE_QUARANTINE,
     SURFACE_REVIEW,
@@ -1218,3 +1219,111 @@ def oversight_report_verify(report_id: str, request: Request) -> dict:
         "verified": not problems,
         "problems": problems,
     }
+
+
+# ---------------------------------------------------------------------
+# Round 12: the governed model gateway — the model pack and the
+# per-case cost ledger, a case-scoped read under the access pack.
+# ---------------------------------------------------------------------
+
+
+@app.get("/model/pack")
+def model_pack(request: Request) -> dict:
+    """The versioned model pack: the token measurement rule,
+    the reference rates (stated pack rates, never provider
+    bills), and the per-case budgets that refuse on the record."""
+    _require_surface(request, SURFACE_MODEL_LEDGER)
+    from pv_cases.model_gateway import MODEL_PACK, model_pack_fingerprint
+
+    pack = dict(MODEL_PACK)
+    pack["fingerprint"] = model_pack_fingerprint()
+    return pack
+
+
+@app.get("/cases/{case_id}/model-ledger")
+def case_model_ledger(case_id: str, request: Request) -> dict:
+    """One case's model ledger, folded from its insert-only
+    call records. A principal whose role has no case scope is
+    answered exactly as for a non-existent case (existence
+    hiding), and the refusal is on the denial log."""
+    _case_read(request, case_id, SURFACE_MODEL_LEDGER)
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    return svc().model_gateway.ledger_view(case_id)
+
+
+@app.get("/cases/{case_id}/model-ledger/verify")
+def case_model_ledger_verify(case_id: str, request: Request) -> dict:
+    """Re-perform one case's ledger: every record's tokens and
+    cost re-derived from its stored sizes under the pack, and
+    the fold re-accumulated a second way. Problems name the
+    record that does not recompute."""
+    _case_read(request, case_id, SURFACE_MODEL_LEDGER)
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    from pv_cases.model_gateway import verify_ledger
+
+    problems = [
+        p for p in verify_ledger(svc().store) if case_id in p
+    ]
+    return {
+        "case_id": case_id,
+        "verified": not problems,
+        "problems": problems,
+    }
+
+
+# ---------------------------------------------------------------------
+# Round 12: the model gateway's cost ledger — the pack, and a
+# case's ledger under the access pack's case-read discipline.
+# ---------------------------------------------------------------------
+
+
+@app.get("/model-ledger/pack")
+def model_ledger_pack(request: Request) -> dict:
+    """The model pack: the token rule, the reference rates, the
+    per-case budgets and the minimisation door's identifier
+    lists — the rules every ledger record was judged under,
+    with the pack's content fingerprint."""
+    _require_surface(request, SURFACE_MODEL_LEDGER)
+    from pv_cases.model_gateway import MODEL_PACK, model_pack_fingerprint
+
+    pack = dict(MODEL_PACK)
+    pack["fingerprint"] = model_pack_fingerprint()
+    return pack
+
+
+@app.get("/cases/{case_id}/model-ledger")
+def case_model_ledger(case_id: str, request: Request) -> dict:
+    """One case's model ledger, folded from its records, with
+    the verifier's re-performance of those records. A
+    case-scoped read: a carried principal whose role has no
+    case scope — intake, case admin — is answered exactly as
+    a non-existent case is answered, and the denial is
+    recorded before the answer. A case that does not exist
+    earns the same 404 whether or not it carries a ledger."""
+    principal = _carried_principal(request, SURFACE_MODEL_LEDGER, case_id)
+    view = None
+    if principal is not None:
+        try:
+            view = svc().model_gateway.ledger_view(
+                case_id, principal=principal, on=date.today()
+            )
+        except AccessDeniedError:
+            raise HTTPException(404, f"no such case: {case_id}")
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    if view is None:
+        view = svc().model_gateway.ledger_view(case_id)
+    from pv_cases.model_gateway import verify_ledger
+
+    problems = [
+        p
+        for p in verify_ledger(svc().store)
+        if p.startswith(f"case {case_id}:")
+        or any(
+            r.call_id in p
+            for r in svc().store.list_model_calls(case_id)
+        )
+    ]
+    return {"case_id": case_id, **view, "verification_problems": problems}
