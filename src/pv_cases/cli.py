@@ -7,7 +7,8 @@ release-quarantine|quarantine-pack|memory-recall|
 memory-retrievals|memory-retention|memory-precedents|
 memory-pack|gateway-invoke|gateway-calls|gateway-pack|
 oversight-pack|oversight-generate|oversight-reports|
-oversight-report|oversight-verify``
+oversight-report|oversight-verify|model-pack|model-ledger|
+model-ledger-verify``
 against the configured store."""
 
 from __future__ import annotations
@@ -52,7 +53,8 @@ USAGE = (
     "oversight-pack|"
     "oversight-generate <window-start> <window-end> <as-of> <generated_by...>|"
     "oversight-reports|oversight-report <report_id>|"
-    "oversight-verify <report_id>"
+    "oversight-verify <report_id>|model-pack|"
+    "model-ledger <case_id>|model-ledger-verify"
 )
 
 
@@ -655,6 +657,46 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  - {problem}")
             return 1
         print(f"{report.report_id}: re-performs exactly")
+        return 0
+    if cmd == "model-pack":
+        from pv_cases.model_gateway import MODEL_PACK, model_pack_fingerprint
+
+        pack = dict(MODEL_PACK)
+        pack["fingerprint"] = model_pack_fingerprint()
+        print(json.dumps(pack, indent=2))
+        return 0
+    if cmd == "model-ledger" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        view = svc.model_gateway.ledger_view(argv[1])
+        print(
+            f"{argv[1]}: {view['calls_completed']} completed,"
+            f" {view['calls_refused_budget']} budget-refused,"
+            f" {view['calls_refused_phi']} phi-refused,"
+            f" {view['calls_errored']} errored —"
+            f" {view['input_tokens']} in / {view['output_tokens']}"
+            f" out tokens, {view['cost_micro']} micro-USD"
+            " (pack-stated measurement, never provider-billed)"
+        )
+        for record in view["records"]:
+            print(
+                f"  {record['call_id']}: {record['status']}"
+                f" [{record['profile']}]"
+                + (f" — {record['detail']}" if record["detail"] else "")
+            )
+        return 0
+    if cmd == "model-ledger-verify":
+        from pv_cases.model_gateway import verify_ledger
+
+        problems = verify_ledger(svc.store)
+        if problems:
+            print("model ledger DOES NOT RECONCILE:")
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        n = svc.store.count_model_calls()
+        print(f"model ledger reconciles: {n} record(s) re-derived clean")
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
         from pv_cases.models import DictionaryEntry, ProductDictionaryEntry
