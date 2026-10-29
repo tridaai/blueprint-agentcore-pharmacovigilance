@@ -216,6 +216,26 @@ other blueprints already cover the LangGraph pattern.
     fingerprint of the policy pack it was judged under, so an
     in-place rule edit without a version bump is detectable
     after the fact (RT-15, closed).
+17. (R11) Oversight reports are artefacts, not views. A
+    periodic safety report is computed only from the record's
+    artefacts under a versioned pack, states its window, its
+    as-of and the fingerprint of the record it was computed
+    over, and is stored insert-only: a moved record yields a
+    superseding report linked to the one it replaces, never
+    an edit, and an unmoved record returns the standing
+    artefact. Every rate carries its denominator on the
+    figure and an empty population reads `no_cases`, never a
+    percentage. The verified mark is earned by independent
+    re-performance — a second path over raw store reads,
+    with its own supersession walks — and refused on any
+    single mismatch. Reports are aggregate-only: no case ids
+    and no patient or reporter field exist in the payload
+    shape, graded by a key scan on every artefact; a clock
+    counts as met only by a case standing medically reviewed
+    at its deadline. Generation is a judged act under the
+    access pack; reads belong to the pack's named report
+    roles. A report is an internal oversight artefact, never
+    a regulatory submission, and states so on its face.
 
 ## Round map
 

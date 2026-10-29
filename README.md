@@ -641,6 +641,74 @@ programme.
   denial log and gateway fingerprints round-tripped through a
   reopened store).
 
+## What Round 11 adds
+
+- **Safety oversight reporting** (`src/pv_cases/oversight.py`,
+  migration 0010): until this round the system could work a
+  case end to end but could not answer the periodic questions
+  a safety function is actually run by — how much came in,
+  how the seriousness mix moved, whether the expedited clocks
+  were met, how old the follow-up queue is, how much of the
+  dictionary coding is automatic, what the quarantine is
+  holding, and how deep the review queue stands. Round 11
+  adds that view as an artefact discipline, not a dashboard
+  over mutable state.
+- **A versioned report pack** (`2026.10.1`) states, per
+  section, the population, the window rule, and the measures:
+  intake volume by state, seriousness mix, clock compliance
+  per obligation class (due in window / met on time /
+  completed late / breached and still open / open within the
+  clock, with a case counting as met only when it stands
+  medically reviewed by its deadline), follow-up ageing by
+  cycle, dictionary coding coverage, quarantine position, and
+  review queue position. Figures are computed **only from
+  artefacts** — cases, tasks, decisions of record,
+  assessments, review acts of record, follow-up states,
+  quarantine records — never from mutable summaries.
+- **Every rate carries its denominator on the figure**: a
+  rate is `{value, numerator, denominator}`; counts carry
+  nulls in the rate fields by construction. A class with no
+  cases in window reads `no_cases` — a report never prints 0%
+  or 100% over an empty population.
+- **Reports are insert-only artefacts**. A report states its
+  window, its as-of, who generated it, the pack version, and
+  the fingerprint of the record it was computed over.
+  Re-running the same window over a moved record produces a
+  **superseding** report linked to the one it replaces; the
+  old report stands byte-identical. Re-running over an
+  unmoved record returns the standing artefact.
+- **Independent re-performance**: `OversightService.verify`
+  recomputes every figure from raw store reads by a second
+  path — its own supersession walks, its own review-state
+  derivation — and the report's `verified` mark is set at
+  generation only when the two paths agree.
+  `scripts/check_reports.py` (or `make reports-check`) runs
+  the same check over a fresh service graph and refuses a
+  tampered figure by name.
+- **Access**: generation is the safety scientist's named act
+  under the Round 10 pack (`generate_oversight_report`,
+  judged, denials recorded); report reads belong to the
+  safety scientist, the safety reviewer, the medical
+  reviewer, and the quality auditor — the auditor reads every
+  report and generates none. Intake and case admin have no
+  report surface.
+- **Aggregate-only, stated**: the pack takes the safer branch
+  of the drill-down choice — **no case ids appear anywhere in
+  a report**, and no patient or reporter field exists in the
+  payload shape; a key scan grades that on every artefact.
+  Drill-down stays where it already lives: the case surfaces,
+  under the roles that may read cases.
+- The demo's closing beat generates the October 2026 report
+  over the planted book: the expedited breaches stand open in
+  the figures — the report shows them; it does not soften
+  them. A report is an internal oversight artefact. It is
+  **never a regulatory submission**, and the artefact says so
+  on its face. Seven new zero-tolerance eval counters grade
+  the layer; the full service graph was exercised on the
+  Postgres dialect for the parity leg (migrations 0001–0010,
+  the planted feed, a verified report read back byte-equal
+  through a reopened store).
+
 ## Quick start
 
 ```bash
@@ -658,8 +726,25 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 10 of 20.** Built and gate-green: everything in
-  Rounds 1–9, plus access control — a versioned access pack
+- **Round 11 of 20.** Built and gate-green: everything in
+  Rounds 1–10, plus safety oversight reporting — a versioned
+  report pack (2026.10.1) computing the periodic view (intake
+  by state, seriousness mix, clock compliance per obligation
+  class, follow-up ageing, coding coverage, quarantine
+  position, review queue position) only from artefacts, every
+  rate carrying its denominator on the figure and an empty
+  population reading `no_cases`; reports as insert-only
+  artefacts (migration 0010) stating their window, as-of and
+  record fingerprint and superseding by link over a moved
+  record; the verified mark set only when an independent
+  re-performance from raw store reads agrees figure for
+  figure; generation as the safety scientist's judged act
+  under the access pack, report reads for the scientist, both
+  review roles and the quality auditor; and aggregate-only
+  payloads — no case ids, no patient or reporter field,
+  graded by a key scan. A report is an internal oversight
+  artefact, never a regulatory submission, and says so on its
+  face. Round 10 shipped: access control — a versioned access pack
   judging every principal the surfaces carry (six roles with
   stated read surfaces and acts), existence hiding on every
   case-scoped read (a role with no case scope is answered
