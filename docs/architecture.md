@@ -236,6 +236,31 @@ other blueprints already cover the LangGraph pattern.
     access pack; reads belong to the pack's named report
     roles. A report is an internal oversight artefact, never
     a regulatory submission, and states so on its face.
+18. (R12) Every model call passes one governed door. The
+    model gateway wraps the configured profile and the
+    assembler's one call routes through it: minimisation is
+    judged at the door against the model pack's
+    direct-identifier lists (a payload carrying one is
+    refused whole, on the record, naming fields and keys but
+    never values), held text is dropped on the gateway path
+    itself, and the pack's per-case budgets refuse before the
+    port is touched — the refusal itself a ledger record. A
+    hosted profile that is not configured refuses through
+    the gateway and propagates; nothing falls back. Every
+    judged call lands once on the insert-only per-case cost
+    ledger (migration 0011): sizes measured, tokens derived
+    by the pack's stated byte rule, cost folded from the
+    pack's reference rates — pack-stated measurements, never
+    provider-billed — and the ledger re-performs by a second
+    path that re-derives every figure and names any record
+    that does not recompute. The ledger is a case-read
+    surface under the access pack, existence-hidden like
+    every case surface. The oversight pack is deliberately
+    not extended with a model-usage section: its verifier
+    grades stored reports against a fixed section list, and
+    a new section would fail every already-struck report's
+    re-performance — so the ledger keeps its own surface and
+    its own check.
 
 ## Round map
 

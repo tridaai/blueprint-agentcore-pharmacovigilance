@@ -709,6 +709,56 @@ programme.
   the planted feed, a verified report read back byte-equal
   through a reopened store).
 
+## What Round 12 adds
+
+- **A governed model gateway** (`src/pv_cases/model_gateway.py`,
+  migration 0011): the Round 8 Gateway fronts tools; until
+  this round nothing fronted the model itself. The
+  assembler's one call — the summary proposal — now routes
+  through a single door that wraps the configured profile,
+  and every judged call lands on a per-case cost ledger.
+- **A versioned model pack** (`2026.10.1`) states the
+  measurement rules: tokens are canonical bytes ÷ 4,
+  ceiling; rates are integer micro-dollars per token per
+  profile (offline 0/0 — it makes no provider call; bedrock
+  3 in / 15 out, a stated reference). **Costs are
+  pack-stated measurements, never provider-billed** — the
+  ledger exists so a case's model spend can be budgeted,
+  compared and re-performed, not to imitate an invoice.
+- **Budgets refuse before the port is touched**: a per-case
+  call budget (25) and cost budget (2,500,000 micro-USD).
+  A call that would be made after either is spent is
+  refused, the refusal is itself a ledger record naming the
+  budget it hit, and the model is never invoked. A hosted
+  profile that is not configured refuses through the
+  gateway as an error record and propagates — there is no
+  silent fallback to the offline composer, ever.
+- **PHI minimisation is judged at the door**: the
+  assembler's facts are the case's minimised form by
+  construction, and the gateway does not trust the
+  construction — it scans every payload for the pack's
+  direct-identifier field paths and identifier keys at any
+  depth, and refuses the call whole when one appears. The
+  refusal record names fields and keys, never values. Held
+  (quarantined) text is also dropped on the gateway path
+  itself, before measurement and before the port.
+- **The ledger re-performs**: `verify_ledger` re-derives
+  every record's tokens and cost from its stored sizes and
+  re-folds each case's totals by a second accumulation; a
+  tampered record is named. `scripts/check_model_ledger.py`
+  (or `make model-ledger-check`) runs the same
+  reconciliation from raw store rows and grades a planted
+  tamper plus both refusals. Ledger reads are a case
+  surface under the Round 10 access pack (`model_ledger`):
+  the case-working roles and the quality auditor read a
+  case's ledger; intake and case admin are answered exactly
+  as for a non-existent case, with the denial recorded.
+- **Deliberately not in the oversight report**: Round 11's
+  verifier grades a stored report against the pack's fixed
+  section list, so adding a model-usage section would fail
+  every already-struck report's re-performance. The ledger
+  keeps its own guarded surface and its own check instead.
+
 ## Quick start
 
 ```bash
@@ -726,8 +776,23 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 11 of 20.** Built and gate-green: everything in
-  Rounds 1–10, plus safety oversight reporting — a versioned
+- **Round 12 of 20.** Built and gate-green: everything in
+  Rounds 1–11, plus the governed model gateway — every
+  summary call routed through one door under a versioned
+  model pack (2026.10.1), landing on an insert-only per-case
+  cost ledger (migration 0011) whose tokens derive from
+  stored sizes by the pack's stated byte rule and whose
+  costs fold from the pack's reference rates (pack-stated
+  measurements, never provider-billed); minimisation judged
+  at the door against the pack's direct-identifier lists,
+  with refusals recorded naming fields and keys but never
+  values; per-case call and cost budgets refusing before
+  the port is touched, on the record; the hosted profile
+  failing closed through the gateway with no fallback; held
+  text dropped on the gateway path itself; the ledger
+  re-performed by a second path and read as a case surface
+  under the access pack, existence-hidden like every case
+  surface. Round 11 shipped: safety oversight reporting — a versioned
   report pack (2026.10.1) computing the periodic view (intake
   by state, seriousness mix, clock compliance per obligation
   class, follow-up ageing, coding coverage, quarantine
