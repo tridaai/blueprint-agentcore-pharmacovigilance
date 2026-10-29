@@ -2307,7 +2307,138 @@ def main() -> int:
     fp10 += _ppf(tampered10) == _ppf()
     counters["gateway_pack_fingerprint_wrong"] = fp10
 
-    print("Rounds 1–10 evals — pharmacovigilance case agent")
+    # ---------------- Round 11: safety oversight reporting ----------------
+    import copy as _copy11
+
+    from pv_cases.access import AccessDeniedError as _ADE11
+    from pv_cases.access import Principal as _Principal11
+    from pv_cases.models import (
+        AdverseEvent as _AE11,
+    )
+    from pv_cases.models import (
+        IntakeReport as _IR11,
+    )
+    from pv_cases.models import (
+        Patient as _Patient11,
+    )
+    from pv_cases.models import (
+        Reporter as _Reporter11,
+    )
+    from pv_cases.models import (
+        ReportSource as _Source11,
+    )
+    from pv_cases.oversight import phi_problems as _phi11
+
+    WIN11 = (date(2026, 10, 1), date(2026, 10, 31))
+    ASOF11 = date(2026, 12, 1)
+    rep11 = svc10.oversight.generate(
+        WIN11[0], WIN11[1], ASOF11, "Dr S. Okafor", today=ASOF11
+    )
+    # Every figure re-performs, and the stored mark agrees.
+    counters["oversight_figure_mismatches"] = len(
+        svc10.oversight.verify(rep11)
+    ) + (0 if rep11.verified else 1)
+
+    # No rate ships without its denominator on the figure.
+    free11 = 0
+    for _section in rep11.sections.values():
+        for _figure in _section.values():
+            if isinstance(_figure["value"], str) and (
+                _figure["numerator"] is None
+                or _figure["denominator"] is None
+            ):
+                free11 += 1
+    counters["oversight_denominator_free_rates"] = free11
+
+    # An empty window reads no_cases, never 0% or 100%.
+    rep11_empty = svc10.oversight.generate(
+        date(2027, 1, 1), date(2027, 1, 31), date(2027, 2, 1),
+        "Dr S. Okafor", today=date(2027, 2, 1),
+    )
+    mis11 = 0
+    for _prefix in ("expedited_7_day", "expedited_15_day"):
+        _rate = rep11_empty.sections["clocks"][
+            f"{_prefix}_compliance_rate"
+        ]
+        mis11 += _rate["value"] != "no_cases"
+    mis11 += (
+        rep11_empty.sections["seriousness"]["serious_share"]["value"]
+        != "no_cases"
+    )
+    counters["oversight_no_cases_misstated"] = mis11
+
+    # No PHI-shaped key anywhere in either artefact's payload.
+    counters["oversight_phi_fields_in_reports"] = len(
+        _phi11(rep11.model_dump(mode="json"))
+    ) + len(_phi11(rep11_empty.model_dump(mode="json")))
+
+    # A tampered figure is named by re-performance, never
+    # ratified with the verified mark.
+    _tampered_sections = _copy11.deepcopy(rep11.sections)
+    _tampered_sections["intake"]["cases_founded"]["value"] += 1
+    tampered11 = rep11.model_copy(
+        update={"sections": _tampered_sections}
+    )
+    counters["oversight_tampered_reports_verified"] = (
+        0 if svc10.oversight.verify(tampered11) else 1
+    )
+
+    # Supersession: the record moves, the same window re-runs,
+    # the old artefact stands byte-identical and the new one
+    # links back to it.
+    before11 = rep11.model_dump_json()
+    svc10.intake.ingest(
+        _IR11(
+            report_id="EVAL-R11-MOVER",
+            source=_Source11.CLINICIAN,
+            received_on=date(2026, 10, 20),
+            patient=_Patient11(initials="Z.Q.", age=39, sex="M"),
+            reporter=_Reporter11(
+                name="Dr Eval Mover",
+                qualification="physician",
+                email="mover@example-clinic.org",
+                country="GB",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                _AE11(
+                    verbatim_term="Severe headache",
+                    onset_date=date(2026, 10, 19),
+                    outcome="recovered",
+                )
+            ],
+            narrative="Late-October clinician report.",
+        ),
+        date(2026, 10, 20),
+    )
+    rep11_second = svc10.oversight.generate(
+        WIN11[0], WIN11[1], ASOF11, "Dr S. Okafor", today=ASOF11
+    )
+    standing11 = svc10.store.get_safety_report(rep11.report_id)
+    counters["oversight_superseded_report_edits"] = (
+        (standing11.model_dump_json() != before11)
+        + (rep11_second.supersedes != rep11.report_id)
+        + (rep11_second.report_id == rep11.report_id)
+    )
+
+    # Generation belongs to the safety scientist alone: the
+    # auditor's attempt is refused (and recorded).
+    role11 = 0
+    try:
+        svc10.oversight.generate(
+            WIN11[0], WIN11[1], ASOF11, "Ms A. Whitfield",
+            principal=_Principal11(
+                id="Ms A. Whitfield", role="quality_auditor"
+            ),
+            today=ASOF11,
+        )
+        role11 += 1
+    except _ADE11:
+        pass
+    counters["oversight_generation_role_errors"] = role11
+
+    print("Rounds 1–11 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]
