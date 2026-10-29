@@ -38,6 +38,13 @@ compliance with the planted breaches standing open, follow-up
 ageing, coding coverage, quarantine and the review queue —
 every rate with its denominator on the figure, verified by an
 independent re-performance before its mark is set.
+Round 12 adds the governed model gateway: every summary call
+routes through one door that prices it on a per-case cost
+ledger under a versioned model pack, refuses over the pack's
+budgets before the port is touched, judges PHI minimisation
+at the door, and holds quarantined text on the gateway path
+itself — and the demo closes by folding the main case's
+ledger and re-performing the whole book's.
 Run with ``make demo``.
 """
 
@@ -534,6 +541,30 @@ def run_demo(out=print) -> Services:
         f"  verified by independent re-performance:"
         f" {report.verified} — and the report states what it"
         f" is: {report.notice.split(':')[0].lower()}"
+    )
+
+    out("-" * 62)
+    out("Round 12 — the governed model gateway: every call priced.")
+    ledger = svc.model_gateway.ledger_view("CASE-RPT-2026-0001")
+    out(
+        "  the main case's summary was drafted through the"
+        " gateway, and the ledger folds its records:"
+    )
+    out(
+        f"  {ledger['calls_completed']} completed call(s),"
+        f" {ledger['input_tokens']} in / {ledger['output_tokens']}"
+        f" out tokens, {ledger['cost_micro']} micro-USD at the"
+        " pack's reference rates (the offline profile is priced"
+        " at zero — the measurement stands, the bill is the"
+        " pack's, never a provider's)"
+    )
+    from pv_cases.model_gateway import verify_ledger
+
+    problems = verify_ledger(svc.store)
+    out(
+        f"  the whole book's ledger re-performs clean:"
+        f" {not problems} ({svc.store.count_model_calls()}"
+        " record(s) over the demo book)"
     )
     return svc
 
