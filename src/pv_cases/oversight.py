@@ -607,7 +607,7 @@ def build_figures(store, review, followup, window_start, window_end, as_of):
             reviewed_on = _reviewed_on(review, case.case_id)
             if reviewed_on is not None:
                 input_ids.update(
-                    a.act_id for a in review.review_for_case(case.case_id).acts
+                    a.act.act_id for a in review.review_for_case(case.case_id).acts
                 )
                 if reviewed_on <= clock.deadline:
                     met += 1
@@ -753,7 +753,7 @@ def build_figures(store, review, followup, window_start, window_end, as_of):
         view = review.review_for_case(case.case_id)
         if view.state == REVIEW_STATE_REVIEWED:
             reviewed_cases += 1
-            input_ids.update(a.act_id for a in view.acts)
+            input_ids.update(a.act.act_id for a in view.acts)
     seals = store.list_seals()
     input_ids.update(s.seal_id for s in seals)
     review_section = {
@@ -881,7 +881,7 @@ def _raw_figures(store, review, followup, window_start, window_end, as_of):
             reviewed_on = _raw_reviewed_on(review, case.case_id)
             if reviewed_on is not None:
                 input_ids.update(
-                    e.act_id for e in review.review_for_case(case.case_id).acts
+                    e.act.act_id for e in review.review_for_case(case.case_id).acts
                 )
                 if reviewed_on <= assessment.clock.deadline:
                     tally["met"] += 1
@@ -1020,7 +1020,7 @@ def _raw_figures(store, review, followup, window_start, window_end, as_of):
         view = review.review_for_case(case.case_id)
         if view.state == REVIEW_STATE_REVIEWED:
             n_reviewed += 1
-            input_ids.update(e.act_id for e in view.acts)
+            input_ids.update(e.act.act_id for e in view.acts)
             continue
         if view.state == REVIEW_STATE_HOLD:
             bucket_counts[REVIEW_BUCKET_HOLD] += 1

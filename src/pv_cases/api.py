@@ -32,6 +32,7 @@ from pv_cases.access import (
     SURFACE_GATEWAY,
     SURFACE_HISTORY,
     SURFACE_MEMORY,
+    SURFACE_OVERSIGHT,
     SURFACE_QUARANTINE,
     SURFACE_REVIEW,
     SURFACE_SEALING,
@@ -56,6 +57,7 @@ from pv_cases.models import (
 )
 from pv_cases.gateway import POLICY_PACK
 from pv_cases.memory import MEMORY_PACK, MemoryError
+from pv_cases.oversight import OversightError, load_oversight_pack
 from pv_cases.quarantine import QUARANTINE_PACK, QuarantineError
 from pv_cases.review import REVIEW_PACK, ReviewError
 from pv_cases.runtime_app import handle_invocation
@@ -1131,3 +1133,88 @@ def access_denials(request: Request) -> list[dict]:
     rides on this surface)."""
     _require_surface(request, SURFACE_DENIAL_LOG)
     return [d.model_dump(mode="json") for d in svc().access.denials()]
+
+
+# ---------------------------------------------------------------------
+# Round 11: safety oversight reporting — the pack, generation
+# as a named act, the report reads, and re-performance.
+# ---------------------------------------------------------------------
+
+
+class OversightGenerateRequest(BaseModel):
+    window_start: date
+    window_end: date
+    as_of: date
+    generated_by: str
+
+
+@app.get("/oversight/pack")
+def oversight_pack(request: Request) -> dict:
+    """The oversight pack: the section definitions a figure's
+    meaning is versioned by, and the role rule for the
+    surface."""
+    _require_surface(request, SURFACE_OVERSIGHT)
+    return load_oversight_pack().model_dump(mode="json")
+
+
+@app.post("/oversight/reports")
+def oversight_generate(body: OversightGenerateRequest, request: Request) -> dict:
+    """Generate a report as a named act. The service runs the
+    access judge when the call carries a principal — the
+    safety scientist generates, bound to the named generator;
+    the refusal is recorded in the denial log and answered
+    403 by name (no case's existence rides on this surface).
+    A window whose end precedes its start is refused 422."""
+    principal = _principal_for(request, SURFACE_OVERSIGHT)
+    try:
+        report = svc().oversight.generate(
+            body.window_start,
+            body.window_end,
+            body.as_of,
+            body.generated_by,
+            principal=principal,
+            today=date.today(),
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))
+    except OversightError as exc:
+        raise HTTPException(422, str(exc))
+    return report.model_dump(mode="json")
+
+
+@app.get("/oversight/reports")
+def oversight_reports(request: Request) -> list[dict]:
+    """The reports of record, insert-only. A carried principal
+    whose role may not read the oversight surface gets the
+    empty list — a filtered list never leaks a count."""
+    if not _surface_visible(request, SURFACE_OVERSIGHT):
+        return []
+    return [r.model_dump(mode="json") for r in svc().oversight.reports()]
+
+
+@app.get("/oversight/reports/{report_id}")
+def oversight_report(report_id: str, request: Request) -> dict:
+    _require_surface(request, SURFACE_OVERSIGHT)
+    report = svc().oversight.get(report_id)
+    if report is None:
+        raise HTTPException(404, f"no such report: {report_id}")
+    return report.model_dump(mode="json")
+
+
+@app.get("/oversight/reports/{report_id}/verify")
+def oversight_report_verify(report_id: str, request: Request) -> dict:
+    """Re-perform a stored report against the record as it
+    stands: every figure recomputed by the second path. A
+    report over a since-moved record names the figures that
+    no longer re-perform — the standing answer is a new
+    report superseding it, never an edit."""
+    _require_surface(request, SURFACE_OVERSIGHT)
+    report = svc().oversight.get(report_id)
+    if report is None:
+        raise HTTPException(404, f"no such report: {report_id}")
+    problems = svc().oversight.verify(report)
+    return {
+        "report_id": report_id,
+        "verified": not problems,
+        "problems": problems,
+    }

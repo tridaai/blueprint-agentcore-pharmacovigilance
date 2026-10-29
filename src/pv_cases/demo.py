@@ -32,6 +32,12 @@ each role's reads and acts, a case admin's case read is answered
 exactly as a non-existent case, the quality auditor's attempt
 at a review act is refused and recorded — and every gateway
 call now carries the policy pack's content fingerprint.
+Round 11 adds safety oversight reporting: the October book is
+read back as one periodic report — intake, seriousness, clock
+compliance with the planted breaches standing open, follow-up
+ageing, coding coverage, quarantine and the review queue —
+every rate with its denominator on the figure, verified by an
+independent re-performance before its mark is set.
 Run with ``make demo``.
 """
 
@@ -484,6 +490,51 @@ def run_demo(out=print) -> Services:
             f" [{denial.role}] {denial.surface} -> {denial.reason}"
             f" (pack {denial.pack_version})"
         )
+
+    out("-" * 62)
+    out("Round 11 — safety oversight: the book, as one report.")
+    from datetime import date as _date
+
+    report = svc.oversight.generate(
+        _date(2026, 10, 1),
+        _date(2026, 10, 31),
+        _date(2026, 11, 20),
+        "Dr A. Rao",
+        today=_date(2026, 11, 20),
+    )
+    intake = report.sections["intake"]
+    out(
+        f"  {report.report_id}: October 2026 as of 2026-11-20 —"
+        f" {intake['reports_received']['value']} reports,"
+        f" {intake['cases_founded']['value']} cases founded,"
+        f" {intake['follow_up_pending']['value']} follow-up pending"
+    )
+    clocks = report.sections["clocks"]
+    for label, prefix in (
+        ("7-day", "expedited_7_day"),
+        ("15-day", "expedited_15_day"),
+    ):
+        rate = clocks[f"{prefix}_compliance_rate"]
+        out(
+            f"  {label} clocks: {clocks[f'{prefix}_due']['value']}"
+            f" due, {clocks[f'{prefix}_met_on_time']['value']} met,"
+            f" {clocks[f'{prefix}_breached_open']['value']} breached"
+            f" and still open — compliance {rate['value']}"
+            f" ({rate['numerator']} of {rate['denominator']})"
+        )
+    ageing = report.sections["follow_ups"]
+    out(
+        f"  follow-ups: {ageing['open_requests']['value']} open"
+        f" ({ageing['overdue_requests']['value']} overdue,"
+        f" {ageing['escalated_requests']['value']} escalated);"
+        f" review queue holds"
+        f" {report.sections['review']['queue_total']['value']}"
+    )
+    out(
+        f"  verified by independent re-performance:"
+        f" {report.verified} — and the report states what it"
+        f" is: {report.notice.split(':')[0].lower()}"
+    )
     return svc
 
 
