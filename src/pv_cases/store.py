@@ -131,6 +131,12 @@ class CaseStore(Protocol):
     def add_access_denial(self, denial) -> None: ...
     def list_access_denials(self) -> list: ...
     def count_access_denials(self) -> int: ...
+    # Round 11: safety oversight reports. Insert-only — a
+    # report over a moved record is a new report superseding
+    # the old one by link, never an edit (see pv_cases.oversight).
+    def add_safety_report(self, report) -> None: ...
+    def get_safety_report(self, report_id: str): ...
+    def list_safety_reports(self) -> list: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -889,6 +895,38 @@ class SqlCaseStore:
         rows = self._run("SELECT COUNT(*) FROM access_denials", fetch="all")
         return int(rows[0][0])
 
+    def add_safety_report(self, report) -> None:
+        self._run(
+            "INSERT INTO safety_reports (report_id, window_start,"
+            " window_end, as_of, payload) VALUES (?,?,?,?,?)",
+            (
+                report.report_id,
+                report.window_start.isoformat(),
+                report.window_end.isoformat(),
+                report.as_of.isoformat(),
+                report.model_dump_json(),
+            ),
+        )
+
+    def get_safety_report(self, report_id: str):
+        from pv_cases.oversight import SafetyReport
+
+        rows = self._run(
+            "SELECT payload FROM safety_reports WHERE report_id = ?",
+            (report_id,),
+            fetch="all",
+        )
+        return SafetyReport.model_validate_json(rows[0][0]) if rows else None
+
+    def list_safety_reports(self) -> list:
+        from pv_cases.oversight import SafetyReport
+
+        rows = self._run(
+            "SELECT payload FROM safety_reports ORDER BY report_id",
+            fetch="all",
+        )
+        return [SafetyReport.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -916,6 +954,7 @@ class InMemoryCaseStore:
         self.memory_retrievals: dict[str, MemoryRetrieval] = {}
         self.gateway_calls: dict[str, GatewayCall] = {}
         self.access_denials: dict[str, object] = {}
+        self.safety_reports: dict[str, object] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -1155,3 +1194,12 @@ class InMemoryCaseStore:
 
     def count_access_denials(self) -> int:
         return len(self.access_denials)
+
+    def add_safety_report(self, report) -> None:
+        self.safety_reports[report.report_id] = report
+
+    def get_safety_report(self, report_id: str):
+        return self.safety_reports.get(report_id)
+
+    def list_safety_reports(self) -> list:
+        return [self.safety_reports[k] for k in sorted(self.safety_reports)]

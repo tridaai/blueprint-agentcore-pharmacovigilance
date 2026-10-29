@@ -128,6 +128,11 @@ SURFACE_HISTORY = "history"
 SURFACE_DEDUP = "dedup"
 SURFACE_DENIAL_LOG = "denial_log"
 SURFACE_PACKS = "packs"
+# Round 11: the safety oversight reports — aggregate-only
+# artefacts, but safety data nonetheless: the case-working
+# roles and the auditor read them; intake and case admin do
+# not (an aggregate is not a licence either).
+SURFACE_OVERSIGHT = "oversight"
 SURFACES = [
     SURFACE_CASE,
     SURFACE_EVIDENCE,
@@ -145,6 +150,7 @@ SURFACES = [
     SURFACE_DEDUP,
     SURFACE_DENIAL_LOG,
     SURFACE_PACKS,
+    SURFACE_OVERSIGHT,
 ]
 
 # Acts — the named operations the pack gates. These are the
@@ -164,6 +170,10 @@ ACT_SEAL_CASE = "seal_case"
 ACT_EXPORT_CASE = "export_case"
 ACT_RELEASE_QUARANTINE = "release_quarantine"
 ACT_RECALL_MEMORY = "recall_memory"
+# Round 11: generating an oversight report is a named act —
+# the safety scientist's, the operational case-working role.
+# The auditor reads reports; it generates none.
+ACT_GENERATE_OVERSIGHT_REPORT = "generate_oversight_report"
 ACTS = [
     ACT_INTAKE_REPORT,
     ACT_SUBMIT_FOLLOW_UP,
@@ -178,6 +188,7 @@ ACTS = [
     ACT_EXPORT_CASE,
     ACT_RELEASE_QUARANTINE,
     ACT_RECALL_MEMORY,
+    ACT_GENERATE_OVERSIGHT_REPORT,
 ]
 
 # Denial reasons — the closed vocabulary of the denial log.
@@ -278,6 +289,7 @@ _CASEWORK_READS = [
     SURFACE_HISTORY,
     SURFACE_DEDUP,
     SURFACE_PACKS,
+    SURFACE_OVERSIGHT,
 ]
 
 ACCESS_PACK_V1 = AccessPack(
@@ -304,6 +316,7 @@ ACCESS_PACK_V1 = AccessPack(
                 ACT_RESOLVE_CODING_TASK,
                 ACT_RELEASE_QUARANTINE,
                 ACT_RECALL_MEMORY,
+                ACT_GENERATE_OVERSIGHT_REPORT,
             ],
         ),
         RoleGrant(
@@ -366,6 +379,7 @@ ACCESS_PACK_V1 = AccessPack(
             ROLE_SAFETY_REVIEWER,
             ROLE_MEDICAL_REVIEWER,
         ],
+        ACT_GENERATE_OVERSIGHT_REPORT: [ROLE_SAFETY_SCIENTIST],
     },
 )
 
@@ -395,7 +409,14 @@ class AccessDenial(BaseModel):
     never state to rewrite. `target` is the identifier the
     requester supplied (a case id, a record id, an act name) —
     for a hidden case it is the requested string and nothing in
-    the record says whether the case exists."""
+    the record says whether the case exists.
+- **Round 11 joins this pack.** The oversight surface and the
+  report-generation act were added when the surface itself
+  landed (Round 11), under this same version string — the
+  pack's content fingerprint (see below) is what separates
+  the pack's content before and after, the same property the
+  gateway's per-call fingerprint relies on (RT-15).
+"""
 
     denial_id: str
     seq: int  # the log's append order (the count at write time)
