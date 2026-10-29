@@ -23,6 +23,7 @@ from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
 from pv_cases.memory import MemoryService
 from pv_cases.object_store import LocalObjectStore
+from pv_cases.oversight import OversightService
 from pv_cases.quarantine import QuarantineService
 from pv_cases.reporting import current_report
 from pv_cases.review import ReviewService
@@ -161,6 +162,16 @@ class Services:
             self.memory,
         ):
             guarded.access = self.access
+        # Round 11: safety oversight reporting — the periodic
+        # view over the whole book. It reads the review and
+        # follow-up services' derived views for its builder
+        # path (its verifier re-derives from the raw store),
+        # and its generation act is judged by the same access
+        # control as every other named act.
+        self.oversight = OversightService(
+            self.store, review=self.review, followup=self.followup
+        )
+        self.oversight.access = self.access
 
     def _dictionary_lookup(self, verbatim: str) -> dict:
         """The gateway's dictionary tool: the coding layer's own
