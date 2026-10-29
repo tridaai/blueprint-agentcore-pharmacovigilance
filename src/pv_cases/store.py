@@ -137,6 +137,12 @@ class CaseStore(Protocol):
     def add_safety_report(self, report) -> None: ...
     def get_safety_report(self, report_id: str): ...
     def list_safety_reports(self) -> list: ...
+    # Round 12: the model gateway's cost ledger. Insert-only —
+    # a call record, completed or refused, stands exactly as
+    # the gateway wrote it (see pv_cases.model_gateway).
+    def add_model_call(self, record) -> None: ...
+    def list_model_calls(self, case_id: str | None = None) -> list: ...
+    def count_model_calls(self) -> int: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -927,6 +933,40 @@ class SqlCaseStore:
         )
         return [SafetyReport.model_validate_json(r[0]) for r in rows]
 
+    def add_model_call(self, record) -> None:
+        self._run(
+            "INSERT INTO model_calls (record_id, case_id, profile,"
+            " status, payload) VALUES (?,?,?,?,?)",
+            (
+                record.call_id,
+                record.case_id,
+                record.profile,
+                record.status,
+                record.model_dump_json(),
+            ),
+        )
+
+    def list_model_calls(self, case_id: str | None = None) -> list:
+        from pv_cases.model_gateway import ModelCallRecord
+
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM model_calls ORDER BY record_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM model_calls WHERE case_id = ?"
+                " ORDER BY record_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [ModelCallRecord.model_validate_json(r[0]) for r in rows]
+
+    def count_model_calls(self) -> int:
+        rows = self._run("SELECT COUNT(*) FROM model_calls", fetch="all")
+        return int(rows[0][0])
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -955,6 +995,7 @@ class InMemoryCaseStore:
         self.gateway_calls: dict[str, GatewayCall] = {}
         self.access_denials: dict[str, object] = {}
         self.safety_reports: dict[str, object] = {}
+        self.model_calls: dict[str, object] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -1203,3 +1244,17 @@ class InMemoryCaseStore:
 
     def list_safety_reports(self) -> list:
         return [self.safety_reports[k] for k in sorted(self.safety_reports)]
+
+    def add_model_call(self, record) -> None:
+        self.model_calls[record.call_id] = record
+
+    def list_model_calls(self, case_id: str | None = None) -> list:
+        items = [
+            self.model_calls[k] for k in sorted(self.model_calls)
+        ]
+        if case_id is not None:
+            items = [r for r in items if r.case_id == case_id]
+        return items
+
+    def count_model_calls(self) -> int:
+        return len(self.model_calls)
