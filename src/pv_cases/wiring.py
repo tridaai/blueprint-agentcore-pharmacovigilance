@@ -22,6 +22,7 @@ from pv_cases.gateway import (
 from pv_cases.history import HistoryService
 from pv_cases.intake import ReferenceFeedAdapter
 from pv_cases.memory import MemoryService
+from pv_cases.model_gateway import ModelGateway
 from pv_cases.object_store import LocalObjectStore
 from pv_cases.oversight import OversightService
 from pv_cases.quarantine import QuarantineService
@@ -104,10 +105,19 @@ class Services:
             writer.seal_lookup = self.sealing.get_seal
         self.history = HistoryService(self.store, self.chain, self.objects)
         self.feed = ReferenceFeedAdapter()
+        # Round 12: the governed model gateway wraps the
+        # configured profile — every summary call the assembler
+        # makes routes through it and lands on the cost ledger.
+        # The wrapped profile's behaviour is unchanged (offline
+        # deterministic; bedrock fail-closed), and the summary
+        # still names the wrapped profile.
+        self.model_gateway = ModelGateway(
+            self.store, model_for_profile(settings.model_profile)
+        )
         self.assembler = CaseAssembler(
             self.store,
             self.chain,
-            model_for_profile(settings.model_profile),
+            self.model_gateway,
             history=self.history,
             coding=self.coding,
             assessment=self.assessment,
@@ -123,6 +133,10 @@ class Services:
         self.memory.seal_lookup = self.sealing.get_seal
         self.quarantine.seal_lookup = self.sealing.get_seal
         self.assembler.quarantine = self.quarantine
+        # Round 12: the gateway takes the same quarantine — a
+        # held fact is dropped on the gateway path itself,
+        # before measurement and before the port is touched.
+        self.model_gateway.quarantine = self.quarantine
         # Round 9 (RT-01): the assessment engine reads event
         # descriptions as deciding facts, so it takes the same
         # quarantine the assembler takes — a held description is
@@ -172,6 +186,10 @@ class Services:
             self.store, review=self.review, followup=self.followup
         )
         self.oversight.access = self.access
+        # Round 12: the model gateway's ledger reads are judged
+        # by the same access control — one denial log for every
+        # refused read, the ledger's included.
+        self.model_gateway.access = self.access
 
     def _dictionary_lookup(self, verbatim: str) -> dict:
         """The gateway's dictionary tool: the coding layer's own

@@ -507,7 +507,18 @@ class CaseAssembler:
         self._attach_coding(case_id, today)
         self._attach_assessment(case_id, today)
         facts = self.read_case_facts(case_id)
-        statements = self.model.propose_summary(facts)
+        # Round 12: when the model behind this assembler is the
+        # governed gateway, the call routes through it — case,
+        # facts and the day — so the ledger records it. A bare
+        # port (the shape unit tests construct) is called as
+        # before.
+        propose_for_case = getattr(
+            self.model, "propose_summary_for_case", None
+        )
+        if propose_for_case is not None:
+            statements = propose_for_case(case_id, facts, today=today)
+        else:
+            statements = self.model.propose_summary(facts)
         problems = self.resolver.problems(case_id, statements)
         if self.coding is not None:
             # Round 3: the coded-term discipline — a summary that
