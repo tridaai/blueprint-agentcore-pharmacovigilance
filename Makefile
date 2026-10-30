@@ -13,7 +13,7 @@
 # No uv? python3 -m venv .venv && source .venv/bin/activate, then:
 #   make install-pip
 
-.PHONY: install install-pip demo test evals serve api invoke reports-check model-ledger-check signals-check steward-check console-check postgres-check draft-final-check
+.PHONY: install install-pip demo test evals serve api invoke reports-check model-ledger-check signals-check steward-check console-check postgres-check draft-final-check red-team-check
 
 install:
 	uv sync --extra dev
@@ -52,6 +52,9 @@ console-check:
 
 draft-final-check:
 	uv run python scripts/check_draft_final.py
+
+red-team-check:
+	uv run python scripts/check_red_team.py
 
 # The Postgres production profile, smoked and graded for
 # parity against the SQLite sheet. Needs PV_POSTGRES_URL
