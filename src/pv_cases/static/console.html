@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northbridge Therapeutics — Safety Reviewer Console</title>
+<style>
+  :root { --ink: #0A0A0A; --accent: #4F46E5; --line: #E4E4E7; --mut: #5B5B66; --bad: #B91C1C; --warn: #B45309; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif; background: #FFFFFF; color: var(--ink); }
+  header { display: flex; align-items: center; gap: 14px; padding: 18px 28px; border-bottom: 1px solid var(--line); }
+  header img { width: 40px; height: 40px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { margin: 2px 0 0; color: var(--mut); font-size: 13px; }
+  main { padding: 22px 28px 8px; max-width: 1180px; margin: 0 auto; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 20px; }
+  .bar label { font-size: 12px; color: var(--mut); display: block; margin-bottom: 4px; }
+  .bar input { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; }
+  .bar button { padding: 8px 14px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
+  .bar button.ghost { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+  .bar .who { font-size: 13px; color: var(--mut); margin-left: auto; }
+  section { margin-bottom: 26px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .sub { color: var(--mut); font-size: 13px; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--mut); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #EEF2FF; color: var(--accent); font-size: 12px; }
+  .pill.bad { background: #FEF2F2; color: var(--bad); }
+  .pill.warn { background: #FFFBEB; color: var(--warn); }
+  .hidden-note { color: var(--mut); font-style: italic; font-size: 13.5px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 170px; }
+  .card .n { font-size: 22px; font-weight: 700; }
+  .card .k { color: var(--mut); font-size: 12.5px; }
+  footer { display: flex; align-items: center; gap: 16px; padding: 18px 28px; border-top: 1px solid var(--line); margin-top: 10px; }
+  footer img { width: 30px; height: 30px; }
+  footer a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<header>
+  <img src="https://trida.ai/logos-rounded/trida-rounded.png" alt="Trida AI">
+  <div>
+    <h1>Safety Reviewer Console</h1>
+    <p>Northbridge Therapeutics — pharmacovigilance case book, composed live from the record. Nothing here is submitted anywhere; the system ends at an approved, exportable case file.</p>
+  </div>
+</header>
+<main>
+  <div class="bar">
+    <div>
+      <label for="pid">Principal id (optional)</label>
+      <input id="pid" type="text" placeholder="e.g. Dr A. Rao" size="18">
+    </div>
+    <div>
+      <label for="prole">Principal role (optional)</label>
+      <input id="prole" type="text" placeholder="e.g. medical_reviewer" size="20">
+    </div>
+    <button id="apply" type="button">Apply</button>
+    <button id="clear" type="button" class="ghost">Local view</button>
+    <span class="who" id="who"></span>
+  </div>
+  <div id="root"><p class="hidden-note">Loading the book…</p></div>
+</main>
+<footer>
+  <img src="https://trida.ai/logos-rounded/trida-rounded.png" alt="Trida AI">
+  <a href="https://trida.ai/">Visit Trida AI →</a>
+  <a href="https://github.com/tridaai">View all blueprints →</a>
+</footer>
+<script>
+"use strict";
+const root = document.getElementById("root");
+const who = document.getElementById("who");
+
+function esc(v) {
+  if (v === null || v === undefined) return "—";
+  return String(v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function pill(text, cls) { return '<span class="pill' + (cls ? " " + cls : "") + '">' + esc(text) + "</span>"; }
+function table(headers, rows) {
+  if (!rows.length) return '<p class="hidden-note">Nothing standing.</p>';
+  let h = "<table><thead><tr>" + headers.map(x => "<th>" + esc(x) + "</th>").join("") + "</tr></thead><tbody>";
+  for (const r of rows) h += "<tr>" + r.map(c => "<td>" + c + "</td>").join("") + "</tr>";
+  return h + "</tbody></table>";
+}
+function hidden() { return '<p class="hidden-note">Not readable by this principal — the section arrives empty, by design.</p>'; }
+function cards(pairs) {
+  return '<div class="cards">' + pairs.map(([n, k]) =>
+    '<div class="card"><div class="n">' + esc(n) + '</div><div class="k">' + esc(k) + "</div></div>").join("") + "</div>";
+}
+
+function render(data) {
+  const s = data.sections;
+  let h = "";
+
+  h += "<section><h2>The book at " + esc(data.as_of) + "</h2>";
+  if (s.cases.visible) {
+    const c = s.cases.counts;
+    h += cards([[c.total, "cases"], [c.serious, "serious"], [c.breached, "clocks breached"], [c.sealed, "sealed"]]);
+    h += table(["Case", "Status", "Product", "Seriousness", "Clock", "Deadline", "Days left", "Sealed"],
+      s.cases.rows.map(r => [
+        esc(r.case_id), esc(r.status), esc(r.product_code), esc(r.seriousness),
+        esc(r.clock_state || r.obligation_class), esc(r.deadline),
+        esc(r.days_remaining), r.sealed ? pill("sealed") : "—"
+      ]));
+  } else h += hidden();
+  h += "</section>";
+
+  h += "<section><h2>Medical review queue</h2>";
+  if (s.review_queue.visible) {
+    h += '<p class="sub">' + esc(s.review_queue.counts.total) + " case(s) awaiting review — holds first, then one-decision cases, stale reviews, first reviews.</p>";
+    h += table(["Case", "Bucket", "State", "Seriousness", "Clock", "Deadline", "Days left"],
+      s.review_queue.rows.map(r => [
+        esc(r.case_id), pill(r.bucket, r.bucket === "review_hold" ? "bad" : ""), esc(r.review_state),
+        esc(r.seriousness), esc(r.clock_state), esc(r.deadline), esc(r.days_remaining)
+      ]));
+  } else h += hidden();
+  h += "</section>";
+
+  h += "<section><h2>Follow-up board</h2>";
+  if (s.follow_ups.visible) {
+    h += '<p class="sub">' + esc(s.follow_ups.counts.total) + " task(s), " + esc(s.follow_ups.counts.overdue) + " overdue.</p>";
+    h += table(["Task", "State", "Case", "Cycle", "Due", "Days overdue", "Still missing"],
+      s.follow_ups.rows.map(r => [
+        esc(r.task_id), pill(r.state, r.state === "escalated" ? "bad" : (r.days_overdue > 0 ? "warn" : "")),
+        esc(r.case_id), esc(r.cycle), esc(r.due_on), esc(r.days_overdue), esc((r.missing_fields || []).join(", "))
+      ]));
+  } else h += hidden();
+  h += "</section>";
+
+  h += "<section><h2>Coding queue &amp; quarantine</h2>";
+  if (s.coding_queue.visible) {
+    h += '<p class="sub">' + esc(s.coding_queue.counts.open) + " uncoded decision(s) awaiting a named coder.</p>";
+    h += table(["Task", "Case", "Verbatim", "Reason"],
+      s.coding_queue.rows.map(r => [esc(r.task_id), esc(r.case_id), esc(r.verbatim), esc(r.reason)]));
+  } else h += hidden();
+  if (s.quarantine.visible) {
+    h += '<p class="sub">' + esc(s.quarantine.counts.held) + " field(s) held by the screening pack, of " +
+         esc(s.quarantine.counts.screened) + " screened (" + esc(s.quarantine.counts.released) + " released). Held text is never shown here.</p>";
+    h += table(["Record", "Case", "Field", "Rules"],
+      s.quarantine.rows.map(r => [esc(r.record_id), esc(r.case_id), esc(r.field), esc((r.rules || []).join(", "))]));
+  } else h += hidden();
+  h += "</section>";
+
+  h += "<section><h2>Standing artefacts</h2>";
+  if (s.oversight.visible) {
+    const o = s.oversight.head;
+    h += "<h3>Oversight</h3>" + (o
+      ? '<p class="sub">Report ' + esc(o.report_id) + " · window " + esc(o.window_start) + " → " + esc(o.window_end) +
+        " · verified: " + esc(o.verified) + " · cases founded " + esc(o.cases_founded) +
+        " · breached open: 7-day " + esc(o.expedited_7_day_breached_open) + ", 15-day " + esc(o.expedited_15_day_breached_open) + "</p>"
+      : '<p class="hidden-note">No oversight report struck yet.</p>');
+  } else h += hidden();
+  if (s.signals.visible) {
+    const g = s.signals.head;
+    h += "<h3>Signal counts</h3>" + (g
+      ? '<p class="sub">Table ' + esc(g.table_id) + " · " + esc(g.pairs) + " pair(s), " + esc(g.flagged) +
+        " meeting the pack's criteria — a prompt for human signal evaluation, never a finding.</p>" +
+        table(["Product", "Term", "Cases (a)", "PRR", "Chi-square"],
+          s.signals.flagged.map(p => [esc(p.product_name || p.product_code), esc(p.preferred_term), esc(p.a), esc(p.prr), esc(p.chi_square)]))
+      : '<p class="hidden-note">No signal table struck yet.</p>');
+  } else h += hidden();
+  if (s.stewardship.visible) {
+    const w = s.stewardship.head;
+    h += "<h3>Dictionary stewardship</h3>" + (w
+      ? '<p class="sub">Worklist ' + esc(w.worklist_id) + " · " + esc(w.rows) + " uncoded wording(s) against dictionary " +
+        esc(w.base_dictionary_version) + " · verified: " + esc(w.verified) + "</p>" +
+        table(["Wording", "Kind", "Reason", "Reports", "Dictionary state"],
+          s.stewardship.top.map(r => [esc(r.reported_wording), esc(r.subject_kind), esc(r.reason), esc(r.reports), esc(r.dictionary_state)]))
+      : '<p class="hidden-note">No steward worklist struck yet.</p>');
+  } else h += hidden();
+  h += "</section>";
+
+  h += "<section><h2>Access denials</h2>";
+  if (s.denials.visible) {
+    h += '<p class="sub">' + esc(s.denials.counts.total) + " refusal(s) on the log — every refusal is recorded before it propagates.</p>";
+    h += table(["When", "Principal", "Role", "Surface", "Reason"],
+      s.denials.recent.map(r => [esc(r.denied_on), esc(r.principal_id), esc(r.role), esc(r.surface), esc(r.reason)]));
+  } else h += hidden();
+  h += "</section>";
+
+  root.innerHTML = h;
+  who.textContent = data.principal
+    ? "Viewing as " + data.principal.id + " (" + data.principal.role + ") · access pack " + data.access_pack_version
+    : "Local view (no principal carried) · access pack " + data.access_pack_version;
+}
+
+function load() {
+  const pid = localStorage.getItem("pvPrincipalId") || "";
+  const role = localStorage.getItem("pvPrincipalRole") || "";
+  document.getElementById("pid").value = pid;
+  document.getElementById("prole").value = role;
+  const headers = {};
+  if (pid || role) { headers["X-Principal-Id"] = pid; headers["X-Principal-Role"] = role; }
+  fetch("/console/data", { headers })
+    .then(r => { if (!r.ok) throw new Error("the console surface refused this principal (" + r.status + ")"); return r.json(); })
+    .then(render)
+    .catch(e => { root.innerHTML = '<p class="hidden-note">' + esc(e.message) + "</p>"; });
+}
+document.getElementById("apply").addEventListener("click", () => {
+  localStorage.setItem("pvPrincipalId", document.getElementById("pid").value.trim());
+  localStorage.setItem("pvPrincipalRole", document.getElementById("prole").value.trim());
+  load();
+});
+document.getElementById("clear").addEventListener("click", () => {
+  localStorage.removeItem("pvPrincipalId");
+  localStorage.removeItem("pvPrincipalRole");
+  load();
+});
+load();
+</script>
+</body>
+</html>

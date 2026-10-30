@@ -150,6 +150,16 @@ SURFACE_SIGNAL_COUNTS = "signal_counts"
 # the case admin reads it alongside the case-working roles
 # and the auditor; intake does not.
 SURFACE_DICTIONARY_STEWARDSHIP = "dictionary_stewardship"
+# Round 15: the safety-reviewer console — one composed read
+# over the whole book (cases, the review queue, the follow-up
+# board, the coding queue, the quarantine position and the
+# struck aggregate artefacts). A composition of case data,
+# so the case-working roles and the auditor read it; intake
+# and case admin do not. Entry is judged on this surface,
+# and every composed section is additionally filtered by its
+# own surface — a section the role cannot read arrives
+# empty, never with its count.
+SURFACE_CONSOLE = "console"
 SURFACES = [
     SURFACE_CASE,
     SURFACE_EVIDENCE,
@@ -171,6 +181,7 @@ SURFACES = [
     SURFACE_MODEL_LEDGER,
     SURFACE_SIGNAL_COUNTS,
     SURFACE_DICTIONARY_STEWARDSHIP,
+    SURFACE_CONSOLE,
 ]
 
 # Acts — the named operations the pack gates. These are the
@@ -332,6 +343,7 @@ _CASEWORK_READS = [
     SURFACE_MODEL_LEDGER,
     SURFACE_SIGNAL_COUNTS,
     SURFACE_DICTIONARY_STEWARDSHIP,
+    SURFACE_CONSOLE,
 ]
 
 ACCESS_PACK_V1 = AccessPack(
@@ -490,6 +502,10 @@ class AccessDenial(BaseModel):
   acts were added when the surface itself landed, under
   this same version string, separated by the same
   fingerprint.
+- **Round 15 joins this pack** on the same terms: the
+  console surface was added when the surface itself
+  landed, under this same version string, separated by
+  the same fingerprint.
 """
 
     denial_id: str

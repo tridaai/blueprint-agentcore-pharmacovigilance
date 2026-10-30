@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from pv_cases import __version__
@@ -34,6 +35,7 @@ from pv_cases.access import (
     SURFACE_MEMORY,
     SURFACE_MODEL_LEDGER,
     SURFACE_OVERSIGHT,
+    SURFACE_CONSOLE,
     SURFACE_DICTIONARY_STEWARDSHIP,
     SURFACE_SIGNAL_COUNTS,
     SURFACE_QUARANTINE,
@@ -1577,3 +1579,43 @@ def case_model_ledger_verify(case_id: str, request: Request) -> dict:
         "verified": not problems,
         "problems": problems,
     }
+
+
+# ---------------------------------------------------------------------
+# Round 15: the safety-reviewer console. The page is a static
+# shell — it carries no case data and renders only what the
+# data surface returns. The data surface is judged on the
+# console surface like any other: a carried principal whose
+# role may not read it is refused by name (403, recorded),
+# and each composed section is filtered by its own surface
+# inside the composition.
+# ---------------------------------------------------------------------
+
+
+@app.get("/console", response_class=HTMLResponse)
+def console_page() -> str:
+    """The single-file safety-reviewer console. Static by
+    construction: the file holds no case data — it renders
+    only what /console/data returns."""
+    from pathlib import Path
+
+    return (
+        Path(__file__).resolve().parent / "static" / "console.html"
+    ).read_text(encoding="utf-8")
+
+
+@app.get("/console/data")
+def console_data(request: Request) -> dict:
+    """The composed console read at today: cases with their
+    verdicts and clock positions, the review queue, the
+    follow-up board, the coding queue, the quarantine
+    position, and the standing oversight / signal /
+    stewardship artefacts. No principal = the trusted local
+    path; a carried principal is judged on the console
+    surface, and sections its role cannot read arrive
+    invisible — no rows, no counts."""
+    principal = _carried_principal(request, SURFACE_CONSOLE)
+    try:
+        return svc().console.data(date.today(), principal=principal)
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))

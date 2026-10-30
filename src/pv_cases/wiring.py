@@ -10,6 +10,7 @@ from pv_cases.agent import CaseAssembler, model_for_profile
 from pv_cases.assessment import AssessmentService
 from pv_cases.coding import CodingService, lookup_event
 from pv_cases.config import Settings
+from pv_cases.console import ConsoleService
 from pv_cases.dedup import DedupService
 from pv_cases.evidence import EvidenceChain
 from pv_cases.followup import FollowUpService
@@ -209,6 +210,20 @@ class Services:
         # by the same access control — one denial log for every
         # refused read, the ledger's included.
         self.model_gateway.access = self.access
+        # Round 15: the safety-reviewer console — a composed
+        # read over the services above. It stores nothing and
+        # computes no verdict; it reads queues, boards and
+        # struck artefacts back under the access pack.
+        self.console = ConsoleService(
+            self.store,
+            self.access,
+            review=self.review,
+            followup=self.followup,
+            assessment=self.assessment,
+            oversight=self.oversight,
+            signals=self.signals,
+            steward=self.steward,
+        )
 
     def _dictionary_lookup(self, verbatim: str) -> dict:
         """The gateway's dictionary tool: the coding layer's own
