@@ -987,6 +987,72 @@ programme.
   superseded by a deliberate new pass — the supersession
   is itself an artefact. No open findings remain.
 
+## What Round 18 adds
+
+- **Draft-vs-final review measurement** (`draft_final.py`,
+  migration 0014): the design brief's eighth law — *draft-
+  vs-final diffs are recorded per case* — was the last of
+  its ten laws with no machinery behind it. The review
+  gate has always stored its narrative drafts as
+  content-addressed summaries and bound its accept acts
+  to one of them; this round measures the distance
+  between the two. A measurement (`DFM-`) is an
+  insert-only artefact struck per case once its
+  dual-control review completes: the *draft* is the
+  first narrative the assembler produced, the *final* is
+  the summary content the completing accept acts
+  actually bound — taken from the acts' own bindings and
+  checked against the summary's version (a summary's
+  version is its content hash), never from whichever
+  narrative happens to be latest.
+- **The diff is computed, under a pack**: statement-level
+  comparison under the draft-final pack (2026.10.1), its
+  rules carried as data — a statement is its text plus
+  its citations; matching is a multiset, so identical
+  content reads unchanged, the same words under changed
+  citations read citation-changed, and leftovers read
+  dropped (draft side) or added (final side); a reworded
+  statement therefore reads as a drop plus an add, stated
+  on the pack's face rather than smoothed over, and
+  ordering is not identity. The artefact carries counts
+  and statement hashes — never statement text — plus the
+  assemblies walked (every stored summary up to and
+  including the bound final) and how many of them were
+  distinct drafts, so a rubber stamp (one assembly,
+  approved unchanged) and a quiet re-assembly are
+  distinguishable at a glance.
+- **The book's figure, with its denominator**: the
+  verbatim rate — of the cases standing measured, how
+  many the gate approved with the draft untouched —
+  folds at read time from the standing measurements,
+  every rate stated as value, numerator and denominator
+  (an empty book states `no_cases`, never a bare 0). A
+  measurement over a record that later moves is struck
+  again as a new artefact superseding by link; the
+  standing measurement of a case is the head of that
+  chain. Refusals are by name: a case whose review has
+  not completed cannot be measured (the standing state is
+  named), and a review that bound no summary cannot
+  either. Every measurement is re-performed by a second
+  path over the raw record before its verified mark, and
+  the verifier names any stored figure the record does
+  not re-perform, field by field.
+- **An oversight artefact, not a case artefact**: a
+  measurement writes nothing to the case it measures and
+  is no part of any seal's inventory — striking one over
+  a sealed case leaves the case's export package hash
+  exactly where it stood, graded in the tests, the eval
+  gate and `scripts/check_draft_final.py` (`make
+  draft-final-check`). The act is the safety scientist's
+  named act under a new access surface (`draft_final`),
+  with the case-working roles and the auditor reading;
+  reads are existence-hidden like the ledger's. The
+  parity walk measures two of its cases on both stores,
+  so the figure sheets grade the surface on Postgres too
+  (the sheet now runs 63,543 canonical bytes, identical
+  hashes on both dialects). Six new zero-tolerance
+  `draft_final_*` counters join the eval gate.
+
 ## Quick start
 
 ```bash
@@ -1004,25 +1070,42 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 17 of 20.** Built and gate-green: everything in
-  Rounds 1–16, plus the second red team — a deliberate
+- **Round 18 of 20.** Built and gate-green: everything in
+  Rounds 1–17, plus draft-vs-final review measurement —
+  the design brief's eighth law, the last of its ten
+  without machinery. Per case, once the dual-control
+  review completes, an insert-only measurement (`DFM-`,
+  migration 0014) records the distance between the first
+  assembled narrative draft and the summary content the
+  completing accept acts bound: a statement-level diff
+  computed under a versioned pack (2026.10.1) — unchanged,
+  citation-changed, added, dropped, carried as counts and
+  statement hashes, never statement text — the assemblies
+  walked and the distinct drafts among them, and whether
+  the gate approved the draft untouched. The book's
+  verbatim rate folds at read time with its denominator
+  on the figure; measurements over moved records
+  supersede by link; refusals name the standing review
+  state or the missing summary binding; every measurement
+  is re-performed by a second path before its verified
+  mark. A measurement is an oversight artefact about a
+  case, not part of it: striking one over a sealed case
+  leaves the export package hash unmoved. The parity
+  walk measures on both stores (the figure sheet now
+  63,543 canonical bytes, identical hashes), six
+  `draft_final_*` counters join the eval gate, and
+  `make draft-final-check` grades the planted book.
+  Round 17 shipped: the second red team — a deliberate
   attack pass over the surfaces Rounds 11–16 built, in
   Round 9's pattern (traps in `tests/test_redteam2.py`,
   the `redteam2_*` eval counters, the record appended to
-  `docs/red-team.md`). Fourteen attacks, one real defect,
-  fixed in the round: the model gateway's minimisation
+  `docs/red-team.md`): fourteen attacks, one real defect
+  fixed in the round (the model gateway's minimisation
   door matched identifier keys by their exact spelling,
   so a case, separator or camelCase variant of a
   direct-identifier key walked through it; the door now
-  folds paths and keys before comparing. The rest held —
-  the aggregate artefacts swept for identifiers as
-  values, the signal flag rule at its exact edges, a
-  steward enactment that appends but never rewrites,
-  held text nowhere in the console, a console read that
-  writes nothing, the denial section neither served nor
-  inferable, existence judged behind the surface on the
-  newer APIs, and the parity comparator itself. No open
-  findings. Round 16 shipped: the Postgres production
+  folds paths and keys before comparing), the rest held,
+  and no findings stand open. Round 16 shipped: the Postgres production
   profile stood up and graded — a standing parity harness
   (`scripts/check_postgres.py`, `make postgres-check`)
   that runs the demo's core walk on both stores and

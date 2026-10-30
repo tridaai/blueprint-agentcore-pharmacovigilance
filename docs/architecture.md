@@ -326,6 +326,31 @@ other blueprints already cover the LangGraph pattern.
     sit under the access pack: read by the case-working
     roles, the auditor and the case admin; worked by the
     safety scientist and the case admin.
+21. (R18) The gate's own editing is measured, per case.
+    Once a case's dual-control review completes, the
+    distance between the narrative the reviewers were
+    first given and the summary content their completing
+    accepts bound is itself an insert-only artefact
+    (migration 0014), content-addressed over the two
+    summary hashes, the record's fingerprint and the
+    draft-final pack version. The final is read from the
+    acts' own bindings — the last completing act's bound
+    summary id, checked against the bound content hash —
+    never from recency. The diff is statement-level under
+    the pack's stated rules (text plus citations, matched
+    as a multiset; a reword reads as a drop plus an add)
+    and is carried as counts and statement hashes, never
+    statement text. An unmoved record re-measures to the
+    standing artefact; a moved one supersedes by link,
+    and the standing measurement is the chain's head. A
+    case whose review has not completed, or whose review
+    bound no summary, is refused by name. The artefact is
+    oversight, not casework: it writes nothing to the
+    case and stands outside every seal's inventory, so a
+    sealed case's export hash is unmoved by it. Its act
+    and reads sit under the access pack on their own
+    surface; the book's verbatim-approval rate folds from
+    the standing measurements with its denominator stated.
 
 15. **The safety-reviewer console (Round 15)** is the
     composition layer the design brief's stack named from
@@ -367,14 +392,38 @@ other blueprints already cover the LangGraph pattern.
     silently, the way the Round 10 placeholder defect
     nearly did.
 
+17. **Draft-vs-final measurement (Round 18)** closes the
+    design brief's law list: every one of its ten laws now
+    has machinery. The measurement (`pv_cases/draft_final.py`)
+    composes the review layer's own records — the stored
+    summaries and the acts that bound them — and adds one
+    table of its own; the diff rules travel as a versioned
+    pack in the repo's idiom, so a future change to what
+    counts as "the same statement" is a new pack version,
+    and measurements struck under different versions stay
+    distinguishable by the version they pin and by the
+    record fingerprint in their address. The parity walk
+    strikes two measurements (one verbatim, one changed)
+    and folds the book roll-up, so the surface is graded
+    on both dialects like every surface before it; the
+    eval gate grades it over its own planted book,
+    including the boundary that a measurement struck over
+    a sealed record moves nothing the seal covers.
+
 ## Round map
 
 The full 20-round map lives in the design brief
 (`blueprint-17-agentcore-pharmacovigilance-design.md` in the goal
-files): de-duplication (R2), coding dictionary (R3), seriousness +
-expectedness (R4), follow-up workflow (R5), medical-reviewer gate
-(R6), sealing/export (R7), clocks (R8–R9), quarantine (R10), Memory
-(R11), Gateway + Policy (R12), model gateway + cost ledger (R13),
-console (R14), traps (R15), Postgres profile + prod smoke (R16),
-access control (R17), signal counts (R18), red team (R19), release
-hardening + infra (R20).
+files). As shipped, the rounds ran: foundation (R1),
+de-duplication (R2), coding dictionary (R3), seriousness +
+expectedness (R4), follow-up workflow (R5), medical-reviewer
+gate (R6), sealing/export (R7), the AgentCore Policy (Cedar)
+pack (R8), the first red team (R9), injection quarantine
+(R10), access control with existence hiding (R11), the
+governed model gateway and its cost ledger (R12), signal
+counts (R13), dictionary stewardship (R14), the
+safety-reviewer console (R15), the Postgres profile and the
+parity harness (R16), the second red team (R17) and
+draft-vs-final review measurement (R18). Two rounds remain
+on the map: one further depth round (R19) and release
+hardening (R20).
