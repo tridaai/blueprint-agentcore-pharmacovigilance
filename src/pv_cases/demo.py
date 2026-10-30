@@ -52,6 +52,15 @@ against the pack's stated criteria — first over the book as
 it stands, then again after a small planted cluster of one
 cream's blistering rash lands in the same window and the
 table is re-struck, superseding the first.
+Round 14 adds dictionary stewardship: the book's uncoded
+wordings are read back as one ranked worklist — how often
+each arrives, since when, on which products — and one
+wording is walked through the candidate route: proposed
+by one steward, refused to its own proposer under dual
+control, confirmed by a second steward into a new
+dictionary version that codes a later case, while the
+case that carried the wording first stands exactly as
+coded.
 Run with ``make demo``.
 """
 
@@ -662,6 +671,139 @@ def run_demo(out=print) -> Services:
         f"  verified by independent re-performance:"
         f" {moved.verified} — and the table states what it"
         f" is: {moved.notice.split(':')[0].lower()}"
+    )
+
+    out("-" * 62)
+    out("Round 14 — dictionary stewardship: the uncoded page, governed.")
+    from pv_cases.steward import StewardError
+
+    worklist = svc.steward.generate(
+        _date(2026, 11, 20), "Dr S. Okafor", today=_date(2026, 11, 20)
+    )
+    totals = worklist.totals
+    out(
+        f"  {worklist.worklist_id}: the book's uncoded wordings"
+        f" as of 2026-11-20, struck against dictionary"
+        f" {worklist.base_dictionary_version} —"
+        f" {totals['distinct_wordings']['value']} wording(s),"
+        f" {totals['uncoded_decisions']['value']} uncoded"
+        f" decision(s) over {totals['uncoded_cases']['value']}"
+        f" case(s) (verified: {worklist.verified})"
+    )
+    for row in worklist.rows:
+        products = ", ".join(
+            f"{p.product_name} x{p.reports}" for p in row.products
+        )
+        out(
+            f"    {row.subject_kind} {row.reported_wording!r}"
+            f" [{row.reason}] — {row.reports} report(s)"
+            + (f" on {products}" if products else "")
+            + f"; the dictionary today: {row.dictionary_state}"
+        )
+    out(
+        "  striking the page coded nothing — it is a worklist,"
+        " not an auto-coder, and it says so on its face"
+    )
+    task = next(
+        t
+        for t in svc.coding.uncoded_queue()
+        if t.verbatim == "Tingling in the fingers"
+    )
+    earlier = next(
+        d
+        for d in svc.coding.current_decisions(task.case_id)
+        if d.subject_kind == "event"
+    )
+    out(
+        f"  the earliest carrier, {task.case_id}: its event"
+        f" stands {earlier.status.value} under dictionary"
+        f" {earlier.dictionary_version} — the coding of record"
+    )
+    candidate = svc.steward.propose(
+        worklist.worklist_id,
+        "Tingling in the fingers",
+        "event",
+        "Dr S. Okafor",
+        preferred_term="Paraesthesia",
+        soc="Nervous system disorders",
+        today=_date(2026, 11, 21),
+    )
+    out(
+        f"  {candidate.candidate_id}: Dr S. Okafor proposes"
+        " 'Tingling in the fingers' -> Paraesthesia — a"
+        " proposal enacts nothing; the dictionary is still"
+        f" {svc.coding.dictionary().version}"
+    )
+    try:
+        svc.steward.decide(
+            candidate.candidate_id,
+            "confirm",
+            "Dr S. Okafor",
+            today=_date(2026, 11, 21),
+        )
+        out("  UNEXPECTED: the proposer decided their own candidate")
+    except StewardError as exc:
+        out(f"  the proposer reaches for the decision: refused — {exc}")
+    record = svc.steward.decide(
+        candidate.candidate_id,
+        "confirm",
+        "Ms R. Chen",
+        "Recurring wording with a clean mapping.",
+        today=_date(2026, 11, 21),
+    )
+    out(
+        f"  {record.decision_id}: a second steward confirms —"
+        f" dictionary {record.minted_dictionary_version} is"
+        " minted, naming the candidate; it governs cases"
+        " coded from 2026-11-21"
+    )
+    earlier = next(
+        d
+        for d in svc.coding.current_decisions(task.case_id)
+        if d.subject_kind == "event"
+    )
+    out(
+        f"  {task.case_id} re-read: still"
+        f" {earlier.status.value} under dictionary"
+        f" {earlier.dictionary_version} — history stands,"
+        " the new version rewrites nothing"
+    )
+    svc.intake.ingest(
+        IntakeReport(
+            report_id="RPT-2026-9201",
+            source=ReportSource.CLINICIAN,
+            received_on=_date(2026, 11, 22),
+            patient=Patient(initials="P.Q.", age=57, sex="F"),
+            reporter=Reporter(
+                name="Dr Later Reporter",
+                qualification="physician",
+                email="later@example-clinic.org",
+                country="GB",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                AdverseEvent(
+                    verbatim_term="Tingling in the fingers",
+                    onset_date=_date(2026, 11, 20),
+                    outcome="recovering",
+                )
+            ],
+            narrative="Clinician report via the safety mailbox.",
+        ),
+        _date(2026, 11, 22),
+    )
+    later = next(
+        d
+        for d in svc.coding.current_decisions("CASE-RPT-2026-9201")
+        if d.subject_kind == "event"
+    )
+    out(
+        "  a report landing on 2026-11-22 with the same"
+        f" wording codes: {later.verbatim!r} ->"
+        f" {later.preferred_term} under dictionary"
+        f" {later.dictionary_version} — the steward route,"
+        " end to end"
     )
     return svc
 

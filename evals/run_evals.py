@@ -339,6 +339,46 @@ Round 13 (signal counts), graded over a fresh book whose
                                  auditor's attempt must be
                                  refused and recorded)
 
+Round 14 (dictionary stewardship), graded over a fresh
+book whose uncoded page is known exactly:
+  steward_worklist_figure_errors
+                                 a stored worklist the
+                                 verifier's second path does
+                                 not re-perform exactly, a row
+                                 or total that differs from
+                                 the hand-counted value, or a
+                                 worklist whose verified mark
+                                 is not set
+  steward_ranking_errors       a worklist whose rows are not
+                                 in the pack's stated ranking
+                                 over the graded book
+  steward_phi_fields_in_artefacts
+                                 a forbidden key anywhere in a
+                                 worklist, candidate or
+                                 decision payload
+  steward_tampered_worklists_verified
+                                 a worklist with one count
+                                 moved that the verifier
+                                 passes clean
+  steward_dual_control_errors  a proposer deciding their own
+                                 candidate (under any name
+                                 variant), a decided candidate
+                                 moved by a second decision,
+                                 or a rejection minting a
+                                 dictionary version
+  steward_history_rewrites     a confirmation that writes on
+                                 a case coded before it, or a
+                                 post-confirmation case that
+                                 does not code under the
+                                 minted version
+  steward_role_errors          a steward act performed by a
+                                 principal the pack does not
+                                 grant it to (the auditor's and
+                                 the reviewer's attempts must
+                                 be refused and recorded), or
+                                 an intake principal shown the
+                                 stewardship list
+
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
 
@@ -2896,7 +2936,253 @@ def main() -> int:
     role13 += len(svc13.store.list_access_denials()) != _denials13 + 1
     counters["signal_generation_role_errors"] = role13
 
-    print("Rounds 1–13 evals — pharmacovigilance case agent")
+    # ---------------- Round 14: dictionary stewardship ----------------
+    # The aggregate worklist over the book's uncoded
+    # wordings and the dual-controlled candidate route into
+    # the dictionary. Graded over a fresh book whose
+    # uncoded page is known exactly.
+    from pv_cases.access import AccessDeniedError as _ADE14
+    from pv_cases.access import Principal as _Principal14
+    from pv_cases.models import AdverseEvent as _AE14
+    from pv_cases.models import IntakeReport as _Report14
+    from pv_cases.models import Patient as _Patient14
+    from pv_cases.models import Reporter as _Reporter14
+    from pv_cases.models import ReportSource as _Source14
+    from pv_cases.oversight import phi_problems as _phi14
+    from pv_cases.steward import StewardError as _StewardError14
+
+    ASOF14 = date(2026, 11, 20)
+    DECIDE14 = date(2026, 11, 21)
+
+    def _rep14(rid, received, verbatim, code, name, initials, age,
+               sex, onset):
+        return _Report14(
+            report_id=rid,
+            source=_Source14.CLINICIAN,
+            received_on=received,
+            patient=_Patient14(initials=initials, age=age, sex=sex),
+            reporter=_Reporter14(
+                name="Dr Eval Reporter",
+                qualification="physician",
+                email="eval@example-clinic.org",
+                country="GB",
+            ),
+            suspect_product_code=code,
+            suspect_product_name=name,
+            events=[
+                _AE14(
+                    verbatim_term=verbatim,
+                    onset_date=onset,
+                    outcome="recovered",
+                )
+            ],
+            narrative="Clinician report via the safety mailbox.",
+        )
+
+    tmp14 = Path(tempfile.mkdtemp(prefix="pv-evals-r14-"))
+    svc14 = Services(
+        Settings(
+            sqlite_path=str(tmp14 / "pv.db"),
+            object_store_dir=str(tmp14 / "objects"),
+        )
+    )
+    _book14 = [
+        ("E14-A1", date(2026, 10, 5), "Tingling in the fingers",
+         "NBT-101", "Cardivane", "J.M.", 54, "F", date(2026, 10, 4)),
+        ("E14-A2", date(2026, 10, 9), "Tingling in the fingers",
+         "NBT-101", "Cardivane", "K.T.", 67, "M", date(2026, 10, 5)),
+        ("E14-A3", date(2026, 10, 14), "Tingling in the fingers",
+         "NBT-204", "Somnirel", "L.A.", 49, "F", date(2026, 10, 8)),
+        ("E14-B1", date(2026, 10, 7), "Feeling drained",
+         "NBT-101", "Cardivane", "B.F.", 45, "F", date(2026, 10, 3)),
+        ("E14-C1", date(2026, 10, 11), "Severe headache",
+         None, "Velocard", "C.G.", 52, "M", date(2026, 10, 6)),
+        ("E14-D1", date(2026, 10, 12), "Severe headache",
+         "NBT-101", "Cardivane", "D.H.", 47, "F", date(2026, 10, 10)),
+    ]
+    for _row14 in _book14:
+        _r14 = _rep14(*_row14)
+        svc14.intake.ingest(_r14, _r14.received_on)
+
+    wl14 = svc14.steward.generate(
+        ASOF14, "Dr S. Okafor", today=ASOF14
+    )
+    figures14 = 0
+    figures14 += len(svc14.steward.verify(wl14))
+    figures14 += 0 if wl14.verified else 1
+    _tot14 = {k: v["value"] for k, v in wl14.totals.items()}
+    for _k, _want in {
+        "distinct_wordings": 3,
+        "uncoded_decisions": 5,
+        "uncoded_cases": 5,
+        "open_coding_tasks": 5,
+    }.items():
+        figures14 += _tot14.get(_k) != _want
+    _rows14 = {r.reported_wording: r for r in wl14.rows}
+    _ting14 = _rows14.get("Tingling in the fingers")
+    figures14 += _ting14 is None
+    if _ting14 is not None:
+        figures14 += (_ting14.reports, _ting14.decisions) != (3, 3)
+        figures14 += [
+            (p.product_code, p.reports) for p in _ting14.products
+        ] != [("NBT-101", 2), ("NBT-204", 1)]
+        figures14 += _ting14.first_seen != date(2026, 10, 5)
+        figures14 += _ting14.last_seen != date(2026, 10, 14)
+    _drained14 = _rows14.get("Feeling drained")
+    figures14 += _drained14 is None
+    if _drained14 is not None:
+        figures14 += _drained14.reason != "ambiguous_match"
+        figures14 += _drained14.candidates != ["Asthenia", "Fatigue"]
+    _velo14 = _rows14.get("Velocard")
+    figures14 += _velo14 is None
+    if _velo14 is not None:
+        figures14 += _velo14.subject_kind != "product"
+    counters["steward_worklist_figure_errors"] = figures14
+
+    counters["steward_ranking_errors"] = int(
+        [r.reported_wording for r in wl14.rows]
+        != [
+            "Tingling in the fingers",
+            "Feeling drained",
+            "Velocard",
+        ]
+    )
+
+    import copy as _copy14
+
+    _tampered14 = _copy14.deepcopy(wl14.rows)
+    _tampered14[0].reports += 1
+    counters["steward_tampered_worklists_verified"] = (
+        0
+        if svc14.steward.verify(
+            wl14.model_copy(update={"rows": _tampered14})
+        )
+        else 1
+    )
+
+    cand14 = svc14.steward.propose(
+        wl14.worklist_id,
+        "Tingling in the fingers",
+        "event",
+        "Dr S. Okafor",
+        preferred_term="Paraesthesia",
+        soc="Nervous system disorders",
+        today=DECIDE14,
+    )
+    _before14 = {
+        d.decision_id: d.model_dump_json()
+        for d in svc14.store.list_coding_decisions("CASE-E14-A1")
+    }
+    dual14 = 0
+    try:
+        svc14.steward.decide(
+            cand14.candidate_id, "confirm", "Dr S. Okafor",
+            today=DECIDE14,
+        )
+        dual14 += 1
+    except _StewardError14:
+        pass
+    try:
+        svc14.steward.decide(
+            cand14.candidate_id, "reject", "Dr S Okafor",
+            today=DECIDE14,
+        )
+        dual14 += 1
+    except _StewardError14:
+        pass
+    rec14 = svc14.steward.decide(
+        cand14.candidate_id, "confirm", "Ms R. Chen",
+        today=DECIDE14,
+    )
+    dual14 += rec14.minted_dictionary_version != "2026.10.2"
+    try:
+        svc14.steward.decide(
+            cand14.candidate_id, "reject", "Mr K. Dev",
+            today=DECIDE14,
+        )
+        dual14 += 1
+    except _StewardError14:
+        pass
+    counters["steward_dual_control_errors"] = dual14
+
+    _rej14 = svc14.steward.propose(
+        wl14.worklist_id,
+        "Velocard",
+        "product",
+        "Mr K. Dev",
+        product_code="NBT-101",
+        today=DECIDE14,
+    )
+    _n_versions14 = len(svc14.coding.list_versions())
+    svc14.steward.decide(
+        _rej14.candidate_id, "reject", "Dr S. Okafor",
+        today=DECIDE14,
+    )
+    counters["steward_dual_control_errors"] += (
+        len(svc14.coding.list_versions()) != _n_versions14
+    )
+
+    history14 = 0
+    _after14 = {
+        d.decision_id: d.model_dump_json()
+        for d in svc14.store.list_coding_decisions("CASE-E14-A1")
+    }
+    history14 += _after14 != _before14
+    _standing14 = svc14.coding.current_decisions("CASE-E14-A1")
+    _event14 = next(
+        d for d in _standing14 if d.subject_kind == "event"
+    )
+    history14 += _event14.status.value != "uncoded"
+    history14 += _event14.dictionary_version != "2026.10.1"
+    _new14 = _rep14(
+        "E14-A5", date(2026, 11, 22), "Tingling in the fingers",
+        "NBT-101", "Cardivane", "Y.Y.", 61, "M", date(2026, 11, 20),
+    )
+    svc14.intake.ingest(_new14, _new14.received_on)
+    _standing14 = svc14.coding.current_decisions("CASE-E14-A5")
+    _event14 = next(
+        d for d in _standing14 if d.subject_kind == "event"
+    )
+    history14 += _event14.status.value != "coded"
+    history14 += _event14.preferred_term != "Paraesthesia"
+    history14 += _event14.dictionary_version != "2026.10.2"
+    counters["steward_history_rewrites"] = history14
+
+    _dec14 = svc14.steward.decision_for(cand14.candidate_id)
+    counters["steward_phi_fields_in_artefacts"] = (
+        len(_phi14(wl14.model_dump(mode="json")))
+        + len(_phi14(cand14.model_dump(mode="json")))
+        + len(_phi14(_dec14.model_dump(mode="json")))
+    )
+
+    role14 = 0
+    _denials14 = len(svc14.store.list_access_denials())
+    try:
+        svc14.steward.generate(
+            ASOF14, "Ms A. Whitfield",
+            principal=_Principal14(
+                id="Ms A. Whitfield", role="quality_auditor"
+            ),
+            today=ASOF14,
+        )
+        role14 += 1
+    except _ADE14:
+        pass
+    try:
+        svc14.steward.decide(
+            cand14.candidate_id, "confirm", "Dr B. Lindqvist",
+            principal=_Principal14(
+                id="Dr B. Lindqvist", role="safety_reviewer"
+            ),
+            today=DECIDE14,
+        )
+        role14 += 1
+    except _ADE14:
+        pass
+    role14 += len(svc14.store.list_access_denials()) != _denials14 + 2
+    counters["steward_role_errors"] = role14
+
+    print("Rounds 1–14 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]
