@@ -61,6 +61,28 @@ under the same disciplines as everything it reads:
   re-derives the completing acts, the two summaries and
   the diff from raw store reads by a second walk and
   compares figure for figure.
+- **An artefact's identity is graded, not assumed
+  (Round 19, RT-42).** The re-performance compares the
+  figures; it also grades the claims the artefact makes
+  about itself: the pack it names must be a pack this
+  system holds and the one the re-performance runs
+  under, its id must be the content address recomputed
+  over its own stated fields, and its `supersedes` link
+  must name a measurement the store holds for the same
+  case, never itself, on a chain that reaches a root.
+  Standing, in turn, is a chain property over eligible
+  artefacts only: a row whose id is not its content
+  address is not a link in any chain `measure()` built,
+  and the eligible artefacts must form the one chain —
+  a severed or forked set has no standing measurement,
+  rather than a head picked by date from rows whose
+  order the chain does not state. What this does not
+  grade is
+  recorded in the red-team record as a bounded limit:
+  a fabricated artefact with a correctly recomputed
+  address and fabricated figures is identity-valid, and
+  only the figure re-performance names it — the same
+  trust line every artefact in this system stands on.
 - **A measurement writes nothing to the case.** It is
   an oversight artefact *about* the record, struck over
   it — not a case artefact in it. It binds no part of a
@@ -654,18 +676,141 @@ def _raw_measurement_figures(store, case_id: str):
     )
 
 
+def _identity_problems(
+    store, measurement: DraftFinalMeasurement
+) -> list[str]:
+    """Grade the claims a measurement makes about itself —
+    the pack it names, the id it carries, the chain link
+    it asserts — against what the store and the pack
+    loader hold. The figure re-performance cannot see
+    these: an artefact with honest figures and a forged
+    identity would pass it, and standing is decided by
+    identity and chain, so identity is graded here."""
+    problems: list[str] = []
+    try:
+        load_draft_final_pack(measurement.pack_version)
+    except ValueError:
+        problems.append(
+            f"pack_version: measurement states "
+            f"{measurement.pack_version!r}, which names no "
+            "pack this system holds"
+        )
+    else:
+        if measurement.pack_version != DRAFT_FINAL_PACK_VERSION:
+            problems.append(
+                f"pack_version: measurement states "
+                f"{measurement.pack_version}, the "
+                f"re-performance runs under "
+                f"{DRAFT_FINAL_PACK_VERSION}"
+            )
+    address = _measurement_id(
+        measurement.case_id,
+        measurement.draft_content_hash,
+        measurement.final_content_hash,
+        measurement.record_fingerprint,
+        measurement.pack_version,
+    )
+    if measurement.measurement_id != address:
+        problems.append(
+            f"measurement_id: measurement states "
+            f"{measurement.measurement_id}, its content "
+            f"address over its own stated fields is {address}"
+        )
+    if measurement.supersedes is not None:
+        if measurement.supersedes == measurement.measurement_id:
+            problems.append(
+                "supersedes: measurement names itself"
+            )
+        else:
+            target = store.get_draft_final_measurement(
+                measurement.supersedes
+            )
+            if target is None:
+                problems.append(
+                    f"supersedes: measurement names "
+                    f"{measurement.supersedes}, which the "
+                    "store does not hold"
+                )
+            elif target.case_id != measurement.case_id:
+                problems.append(
+                    f"supersedes: measurement names "
+                    f"{measurement.supersedes}, a measurement "
+                    f"of case {target.case_id}"
+                )
+            else:
+                seen = {measurement.measurement_id}
+                cursor = target
+                while cursor.supersedes is not None:
+                    if cursor.supersedes in seen:
+                        problems.append(
+                            "supersedes: the chain from this "
+                            "measurement loops at "
+                            f"{cursor.supersedes} and never "
+                            "reaches a root"
+                        )
+                        break
+                    seen.add(cursor.supersedes)
+                    nxt = store.get_draft_final_measurement(
+                        cursor.supersedes
+                    )
+                    if nxt is None:
+                        break
+                    cursor = nxt
+    # The chain's shape over the case's eligible artefacts:
+    # `measure()` builds exactly one chain per case — one
+    # root, each link superseded by at most one other. A
+    # severed link leaves two roots standing; a second
+    # link over the same predecessor forks it. Neither
+    # shape is one the service can strike, so either names
+    # the chain as broken rather than letting a date order
+    # choose between two heads.
+    siblings = store.list_draft_final_measurements(
+        measurement.case_id
+    )
+    eligible = [
+        m for m in siblings if _chain_eligible(m, siblings)
+    ]
+    if eligible:
+        roots = [m for m in eligible if m.supersedes is None]
+        if len(roots) != 1:
+            problems.append(
+                f"supersedes: the case's measurements form "
+                f"{len(roots)} chains, not one — a link has "
+                "been severed or a root added"
+            )
+        children: dict[str, int] = {}
+        for m in eligible:
+            if m.supersedes is not None:
+                children[m.supersedes] = (
+                    children.get(m.supersedes, 0) + 1
+                )
+        for target_id, count in sorted(children.items()):
+            if count > 1:
+                problems.append(
+                    f"supersedes: {target_id} is superseded "
+                    f"by {count} measurements — the chain "
+                    "forks there"
+                )
+    return problems
+
+
 def verify_measurement(store, measurement: DraftFinalMeasurement) -> list[str]:
     """Re-perform a measurement: re-derive the selection and
     the diff from the raw store by the second path and
-    compare, figure for figure. Returns the list of
-    problems — empty only when the measurement is exactly
-    what the record says. A figure the re-performance
-    cannot reproduce is named, never summarised away."""
-    problems: list[str] = []
+    compare, figure for figure — and grade the artefact's
+    identity claims (pack, content address, supersedes
+    link) alongside. Returns the list of problems — empty
+    only when the measurement is exactly what the record
+    says and exactly what it claims to be. A figure the
+    re-performance cannot reproduce is named, never
+    summarised away."""
+    problems: list[str] = _identity_problems(store, measurement)
     try:
         want = _raw_measurement_figures(store, measurement.case_id)
     except DraftFinalError as exc:
-        return [f"the record no longer supports a measurement: {exc}"]
+        return problems + [
+            f"the record no longer supports a measurement: {exc}"
+        ]
     for field in (
         "draft_summary_id",
         "draft_content_hash",
@@ -703,6 +848,41 @@ def verify_measurement(store, measurement: DraftFinalMeasurement) -> list[str]:
     return problems
 
 
+def _chain_eligible(
+    measurement: DraftFinalMeasurement,
+    siblings: list[DraftFinalMeasurement],
+) -> bool:
+    """Whether an artefact can stand as a link in a chain
+    `measure()` built (Round 19, RT-42): its id is the
+    content address over its own stated fields, its pack
+    is one this system holds, and its supersedes link —
+    where it carries one — names a sibling measurement of
+    the same case, never itself. A row written around the
+    service fails at least the address, and a row that is
+    not a chain link cannot become the standing
+    measurement by carrying a later date."""
+    try:
+        load_draft_final_pack(measurement.pack_version)
+    except ValueError:
+        return False
+    if measurement.measurement_id != _measurement_id(
+        measurement.case_id,
+        measurement.draft_content_hash,
+        measurement.final_content_hash,
+        measurement.record_fingerprint,
+        measurement.pack_version,
+    ):
+        return False
+    if measurement.supersedes is not None:
+        if measurement.supersedes == measurement.measurement_id:
+            return False
+        if measurement.supersedes not in {
+            m.measurement_id for m in siblings
+        }:
+            return False
+    return True
+
+
 def _standing(
     measurements: list[DraftFinalMeasurement],
 ) -> DraftFinalMeasurement | None:
@@ -712,20 +892,28 @@ def _standing(
     applied to this artefact). The chain, not the strike
     date, is the order: two measurements struck the same
     day over a record that moved between them stand in
-    chain order regardless of their ids."""
+    chain order regardless of their ids. Only
+    chain-eligible artefacts take part (Round 19), and
+    they must form the single chain `measure()` builds —
+    one root, one head: a severed or forked set has no
+    standing measurement at all, rather than a head
+    picked by date from rows whose order the chain does
+    not state."""
     if not measurements:
         return None
+    eligible = [
+        m for m in measurements if _chain_eligible(m, measurements)
+    ]
+    roots = [m for m in eligible if m.supersedes is None]
     superseded = {
-        m.supersedes for m in measurements if m.supersedes
+        m.supersedes for m in eligible if m.supersedes
     }
     heads = [
-        m for m in measurements if m.measurement_id not in superseded
+        m for m in eligible if m.measurement_id not in superseded
     ]
-    if not heads:
+    if len(roots) != 1 or len(heads) != 1:
         return None
-    return sorted(
-        heads, key=lambda m: (m.measured_on, m.measurement_id)
-    )[-1]
+    return heads[0]
 
 
 def book_rollup(store) -> dict[str, Any]:
