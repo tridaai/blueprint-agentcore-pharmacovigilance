@@ -379,6 +379,36 @@ book whose uncoded page is known exactly:
                                  an intake principal shown the
                                  stewardship list
 
+Round 15 (the safety-reviewer console), graded over a fresh
+book with the three aggregate artefacts struck:
+  console_figure_mismatches    a console count or head that
+                                 disagrees with the surface it
+                                 composes, read by a second
+                                 route (case list, review
+                                 queue, follow-up board, the
+                                 struck artefacts themselves)
+  console_tampered_rows_verified
+                                 a console payload with one
+                                 figure moved that the
+                                 agreement comparison passes
+                                 clean
+  console_hiding_errors        a principal refused at the
+                                 console's door without the
+                                 refusal landing on the denial
+                                 log, or a section shown to a
+                                 role its own surface refuses —
+                                 or arriving with a count it
+                                 should not carry
+  console_baked_data_errors    the console page shell
+                                 carrying any of the book's
+                                 case ids, or missing its
+                                 branding
+  console_store_writes         a console read that stores
+                                 anything (a refusal's denial
+                                 record is the access layer's,
+                                 and the only write a read may
+                                 cause)
+
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
 
@@ -3182,7 +3212,175 @@ def main() -> int:
     role14 += len(svc14.store.list_access_denials()) != _denials14 + 2
     counters["steward_role_errors"] = role14
 
-    print("Rounds 1–14 evals — pharmacovigilance case agent")
+    # ---------------- Round 15: the safety-reviewer console ----------------
+    # The composed read over the whole book: its figures must
+    # agree with the surfaces it composes, read by second
+    # routes; its door and its section filtering are the
+    # access pack's; its page is a shell with nothing baked
+    # in; and a read stores nothing.
+    from copy import deepcopy as _deepcopy15
+
+    from pv_cases.access import AccessDeniedError as _ADE15
+    from pv_cases.access import Principal as _Principal15
+    from pv_cases.models import AdverseEvent as _AE15
+    from pv_cases.models import IntakeReport as _Report15
+    from pv_cases.models import Patient as _Patient15
+    from pv_cases.models import Reporter as _Reporter15
+    from pv_cases.models import ReportSource as _Source15
+
+    ASOF15 = date(2026, 11, 20)
+    WIN15 = (date(2026, 10, 1), date(2026, 10, 31))
+
+    def _rep15(rid, received, verbatim, initials, outcome="recovered"):
+        return _Report15(
+            report_id=rid,
+            source=_Source15.CLINICIAN,
+            received_on=received,
+            patient=_Patient15(initials=initials, age=58, sex="F"),
+            reporter=_Reporter15(
+                name="Dr Eval Reporter",
+                qualification="physician",
+                email="eval@example-clinic.org",
+                country="GB",
+            ),
+            suspect_product_code="NBT-101",
+            suspect_product_name="Cardivane",
+            events=[
+                _AE15(
+                    verbatim_term=verbatim,
+                    onset_date=date(2026, 10, 3),
+                    outcome=outcome,
+                )
+            ],
+            narrative="Clinician report via the safety mailbox.",
+        )
+
+    tmp15 = Path(tempfile.mkdtemp(prefix="pv-evals-r15-"))
+    svc15 = Services(
+        Settings(
+            sqlite_path=str(tmp15 / "pv.db"),
+            object_store_dir=str(tmp15 / "objects"),
+        )
+    )
+    for _row15 in [
+        ("E15-A1", date(2026, 10, 5), "Severe headache", "J.M.", "recovered"),
+        ("E15-A2", date(2026, 10, 6), "Severe headache", "K.T.", "hospitalisation"),
+        ("E15-A3", date(2026, 10, 7), "Tingling in the fingers", "L.A.", "recovered"),
+        ("E15-A4", date(2026, 10, 8), "Severe headache", "B.F.", "recovered"),
+    ]:
+        _r15 = _rep15(*_row15)
+        svc15.intake.ingest(_r15, _r15.received_on)
+    svc15.oversight.generate(
+        WIN15[0], WIN15[1], ASOF15, "Dr A. Rao", today=ASOF15
+    )
+    svc15.signals.generate(
+        WIN15[0], WIN15[1], ASOF15, "Dr S. Okafor", today=ASOF15
+    )
+    svc15.steward.generate(ASOF15, "Dr S. Okafor", today=ASOF15)
+
+    def _agree15(data) -> list[str]:
+        problems = []
+        sections = data["sections"]
+        if sections["cases"]["counts"]["total"] != len(svc15.store.list_cases()):
+            problems.append("cases.counts.total")
+        if sections["review_queue"]["counts"]["total"] != len(
+            svc15.review.queue(ASOF15)
+        ):
+            problems.append("review_queue.counts.total")
+        if sections["follow_ups"]["counts"]["total"] != len(
+            svc15.followup.board(ASOF15)
+        ):
+            problems.append("follow_ups.counts.total")
+        _report15 = svc15.oversight.reports()[-1]
+        _head15 = sections["oversight"]["head"]
+        if _head15 is None or _head15["report_id"] != _report15.report_id:
+            problems.append("oversight.head")
+        elif _head15["cases_founded"] != _report15.sections["intake"][
+            "cases_founded"
+        ]["value"]:
+            problems.append("oversight.head.cases_founded")
+        _table15 = svc15.signals.tables()[-1]
+        _shead15 = sections["signals"]["head"]
+        if _shead15 is None or _shead15["table_id"] != _table15.table_id:
+            problems.append("signals.head")
+        elif _shead15["flagged"] != sum(
+            1 for p in _table15.pairs if p.meets_criteria
+        ):
+            problems.append("signals.head.flagged")
+        _wl15 = svc15.steward.worklists()[-1]
+        _whead15 = sections["stewardship"]["head"]
+        if _whead15 is None or _whead15["worklist_id"] != _wl15.worklist_id:
+            problems.append("stewardship.head")
+        return problems
+
+    data15 = svc15.console.data(ASOF15)
+    counters["console_figure_mismatches"] = len(_agree15(data15))
+
+    tampered15 = _deepcopy15(data15)
+    tampered15["sections"]["cases"]["counts"]["total"] += 1
+    tampered15["sections"]["oversight"]["head"]["cases_founded"] += 1
+    named15 = _agree15(tampered15)
+    counters["console_tampered_rows_verified"] = (
+        0
+        if {"cases.counts.total", "oversight.head.cases_founded"} <= set(named15)
+        else 1
+    )
+
+    hiding15 = 0
+    _denials15 = len(svc15.store.list_access_denials())
+    for _role15 in ("intake_processor", "case_admin"):
+        try:
+            svc15.console.data(
+                ASOF15,
+                principal=_Principal15(id="Ms Eval", role=_role15),
+            )
+            hiding15 += 1
+        except _ADE15:
+            pass
+    hiding15 += (
+        len(svc15.store.list_access_denials()) != _denials15 + 2
+    )
+    _sci15 = svc15.console.data(
+        ASOF15,
+        principal=_Principal15(id="Dr S. Okafor", role="safety_scientist"),
+    )
+    hiding15 += _sci15["sections"]["denials"] != {"visible": False}
+    hiding15 += not _sci15["sections"]["cases"]["visible"]
+    counters["console_hiding_errors"] = hiding15
+
+    _shell15 = (
+        Path(__file__).resolve().parents[1]
+        / "src" / "pv_cases" / "static" / "console.html"
+    ).read_text(encoding="utf-8")
+    baked15 = 0
+    for _case15 in svc15.store.list_cases():
+        baked15 += _case15.case_id in _shell15
+    for _brand15 in (
+        "Safety Reviewer Console",
+        "https://trida.ai/logos-rounded/trida-rounded.png",
+        "Visit Trida AI →",
+        "View all blueprints →",
+    ):
+        baked15 += _brand15 not in _shell15
+    counters["console_baked_data_errors"] = baked15
+
+    def _counts15() -> tuple[int, int, int, int]:
+        return (
+            len(svc15.store.list_cases()),
+            len(svc15.store.list_safety_reports()),
+            len(svc15.store.list_signal_tables()),
+            len(svc15.store.list_steward_worklists()),
+        )
+
+    _before15 = _counts15()
+    svc15.console.data(ASOF15)
+    svc15.console.data(
+        ASOF15,
+        principal=_Principal15(id="Ms A. Whitfield", role="quality_auditor"),
+    )
+    counters["console_store_writes"] = int(_counts15() != _before15)
+
+    print("Rounds 1–15 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]

@@ -61,6 +61,13 @@ control, confirmed by a second steward into a new
 dictionary version that codes a later case, while the
 case that carried the wording first stands exactly as
 coded.
+Round 15 adds the safety-reviewer console: the whole book
+read back in one composition — the cases with their
+verdicts and clock positions, the review queue, the
+follow-up board, the held fields, and the three standing
+artefacts — judged at its own door under the access pack,
+with an intake principal refused on the record and the
+denial log invisible to the case-working roles.
 Run with ``make demo``.
 """
 
@@ -804,6 +811,63 @@ def run_demo(out=print) -> Services:
         f" {later.preferred_term} under dictionary"
         f" {later.dictionary_version} — the steward route,"
         " end to end"
+    )
+
+    out("-" * 62)
+    out("Round 15 — the safety-reviewer console: the whole book, one read.")
+    console = svc.console.data(_date(2026, 11, 22))
+    book = console["sections"]["cases"]["counts"]
+    out(
+        f"  the book at 2026-11-22: {book['total']} cases"
+        f" ({book['serious']} serious, {book['breached']}"
+        f" clocks breached, {book['sealed']} sealed); the"
+        f" review queue holds"
+        f" {console['sections']['review_queue']['counts']['total']},"
+        f" the follow-up board"
+        f" {console['sections']['follow_ups']['counts']['total']}"
+        f" ({console['sections']['follow_ups']['counts']['overdue']}"
+        " overdue), and"
+        f" {console['sections']['quarantine']['counts']['held']}"
+        " field(s) stand held by the screening pack"
+    )
+    out(
+        "  the standing artefacts, read back — not recomputed:"
+        f" oversight {console['sections']['oversight']['head']['report_id']},"
+        f" signals {console['sections']['signals']['head']['table_id']},"
+        " stewardship"
+        f" {console['sections']['stewardship']['head']['worklist_id']}"
+        " (the R13 table and the R14 worklist were struck"
+        " over the October book; the R14 mint moved only the"
+        " dictionary — their heads stand)"
+    )
+    from pv_cases.access import AccessDeniedError, Principal
+
+    try:
+        svc.console.data(
+            _date(2026, 11, 22),
+            principal=Principal(
+                id="Pat Intake", role="intake_processor"
+            ),
+        )
+        out("  UNEXPECTED: an intake principal read the console")
+    except AccessDeniedError:
+        out(
+            "  an intake principal reaches for the console:"
+            " refused on the console surface, and the refusal"
+            " is on the denial log — the console is judged"
+            " like every other surface in the book"
+        )
+    scientist = svc.console.data(
+        _date(2026, 11, 22),
+        principal=Principal(
+            id="Dr S. Okafor", role="safety_scientist"
+        ),
+    )
+    out(
+        "  the safety scientist reads the book but not the"
+        " denial log: her denials section arrives as"
+        f" {scientist['sections']['denials']} — invisible,"
+        " with no count to leak"
     )
     return svc
 
