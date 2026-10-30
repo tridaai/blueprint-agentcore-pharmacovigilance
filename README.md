@@ -803,6 +803,58 @@ programme.
   named act under the access pack (`signal_counts`
   surface) — the auditor reads tables and generates none.
 
+## What Round 14 adds
+
+- **Dictionary stewardship** (`src/pv_cases/steward.py`,
+  migration 0013): the coding layer's queue is per case —
+  an uncoded verbatim raises a task on its own case — but
+  nothing aggregated the book's uncoded wordings onto one
+  page, so the dictionary itself could not be governed.
+  The steward worklist is that page: every wording the
+  book stands uncoded on, folded in code under a versioned
+  steward pack (2026.10.1).
+- **One ranked row per wording**: how many reports carry
+  it, how many standing decisions stand uncoded on it,
+  when it was first and last seen, why it is uncoded, and
+  the coded products those reports arrived with —
+  attribution only by the standing coded product decision
+  (a report whose product stands uncoded is counted as
+  unattributed, never guessed). Each row also states the
+  wording's standing against the dictionary in force: a
+  wording the dictionary has since learned reads
+  `codes_now`, while the decisions of record that predate
+  the entry stand exactly as coded.
+- **A worklist is never an auto-coder**: striking one
+  codes nothing, changes no case and decides no mapping,
+  and it says so on its face. Worklists are insert-only
+  artefacts that supersede by link when the record moves,
+  are re-performed by a second aggregation path before
+  their verified mark is set (`scripts/check_steward.py`,
+  or `make steward-check`), and carry no case ids and no
+  patient or reporter field anywhere.
+- **Candidates under dual control**: a named steward
+  proposes a mapping against a worklist row — a candidate
+  artefact that enacts nothing — and a second named
+  steward, never the proposer, confirms or rejects it.
+  The decision is its own artefact; a candidate's state is
+  derived, and decided work does not move. Confirmation
+  enacts the mapping through the coding layer's own
+  collision-checked addition, minting a new dictionary
+  version that names the candidate and governs cases
+  coded on or after the decision date. Cases already
+  coded keep the coding of record — history is never
+  rewritten. A wording that stands ambiguous takes no
+  candidate (it is already a synonym of more than one
+  term); it is settled per case by a coder's manual
+  resolution, and the refusal names that path.
+- **Stewardship is judged like every other act**: the
+  surface and its three acts sit under the access pack —
+  the case-working roles, the quality auditor and the
+  case admin read it; the safety scientist and the case
+  admin strike worklists, propose and decide; the auditor
+  performs none of it, and refusals land in the denial log
+  before they propagate.
+
 ## Quick start
 
 ```bash
@@ -820,8 +872,25 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 13 of 20.** Built and gate-green: everything in
-  Rounds 1–12, plus signal counts — the disproportionality
+- **Round 14 of 20.** Built and gate-green: everything in
+  Rounds 1–13, plus dictionary stewardship — the aggregate
+  worklist over the book's uncoded wordings (migration
+  0013): one ranked row per wording computed in code under
+  a versioned steward pack (2026.10.1), stating report and
+  decision counts, first/last seen, the uncoded reason and
+  the coded products the reports arrived with, plus each
+  wording's standing against the dictionary in force;
+  worklists as insert-only artefacts superseding by link,
+  re-performed by a second fold before their verified
+  mark, aggregate-only with no case ids anywhere;
+  candidates proposed against a worklist row and decided
+  under dual control (the proposer may not decide),
+  confirmation enacting the mapping as a new dictionary
+  version through the coding layer's own addition,
+  governing cases coded on or after the decision date
+  while cases already coded keep the coding of record;
+  the stewardship surface and its acts under the access
+  pack. Round 13 shipped: signal counts — the disproportionality
   view over the coded book (migration 0012): every
   product–event pair's 2x2 computed in code under a
   versioned signal pack (2026.10.1) with the proportional

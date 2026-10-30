@@ -286,6 +286,42 @@ other blueprints already cover the LangGraph pattern.
     safety scientist's judged act under the access pack. A
     flag is a prompt for human signal evaluation — never a
     finding — and the table states so on its face.
+20. (R14) The uncoded page is governed in the aggregate,
+    and the dictionary grows only under dual control. A
+    steward worklist folds the book's standing uncoded
+    decisions into one ranked row per reported wording —
+    report and decision counts, first/last seen, the
+    reason, and the coded products the reports arrived
+    with under the same standing-decision attribution as
+    the signal counts — struck against a named dictionary
+    version, whose state each row also states (`codes_now`
+    where the dictionary has since learned the wording;
+    the decisions of record stand regardless). Worklists
+    are insert-only (migration 0013), content-addressed,
+    superseding by link, and earn their verified mark only
+    from a second, global fold over the raw store.
+    Striking one codes nothing. A candidate mapping is
+    proposed against a worklist row as its own insert-only
+    artefact, and is decided by a second named steward —
+    the proposer may not decide, under the repo's text
+    folding — the decision itself an artefact from which
+    the candidate's state is derived. Confirmation enacts
+    the mapping through the coding layer's own
+    collision-checked addition, minting a new dictionary
+    version that names the candidate; the version governs
+    cases coded on or after the decision date, and no
+    stored decision is ever rewritten. An ambiguous
+    wording takes no candidate — the dictionary cannot
+    take a recorded synonym of two terms as a new entry —
+    and is settled per case by a coder's manual
+    resolution. Aggregate-only, like the signal tables:
+    rows carry the reported wording (the artefact's
+    subject), counts, dates and coded product labels — no
+    case id, no patient or reporter field — graded by the
+    same key scan. The stewardship surface and its acts
+    sit under the access pack: read by the case-working
+    roles, the auditor and the case admin; worked by the
+    safety scientist and the case admin.
 
 ## Round map
 
