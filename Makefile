@@ -13,7 +13,7 @@
 # No uv? python3 -m venv .venv && source .venv/bin/activate, then:
 #   make install-pip
 
-.PHONY: install install-pip demo test evals serve api invoke reports-check model-ledger-check signals-check steward-check
+.PHONY: install install-pip demo test evals serve api invoke reports-check model-ledger-check signals-check steward-check console-check
 
 install:
 	uv sync --extra dev
@@ -46,6 +46,9 @@ signals-check:
 
 steward-check:
 	uv run python scripts/check_steward.py
+
+console-check:
+	uv run python scripts/check_console.py
 
 serve:
 	uv run pv-agent-serve

@@ -12,7 +12,7 @@ model-ledger-verify|signals-pack|signals-generate|
 signals-tables|signals-table|signals-verify|steward-pack|
 steward-generate|steward-worklists|steward-worklist|
 steward-verify|steward-propose|steward-candidates|
-steward-candidate|steward-decide``
+steward-candidate|steward-decide|console-data``
 against the configured store."""
 
 from __future__ import annotations
@@ -67,7 +67,8 @@ USAGE = (
     "steward-verify <worklist_id>|"
     "steward-propose <worklist_id> <proposed_by> <proposal-json>|"
     "steward-candidates|steward-candidate <candidate_id>|"
-    "steward-decide <candidate_id> <confirm|reject> <decided_by...>"
+    "steward-decide <candidate_id> <confirm|reject> <decided_by...>|"
+    "console-data [as-of]"
 )
 
 
@@ -945,6 +946,10 @@ def main(argv: list[str] | None = None) -> int:
                 else ""
             )
         )
+        return 0
+    if cmd == "console-data" and len(argv) <= 2:
+        as_of = date.fromisoformat(argv[1]) if len(argv) == 2 else today
+        print(json.dumps(svc.console.data(as_of), indent=2))
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
         from pv_cases.models import DictionaryEntry, ProductDictionaryEntry
