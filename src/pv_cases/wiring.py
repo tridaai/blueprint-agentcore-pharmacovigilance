@@ -30,6 +30,7 @@ from pv_cases.reporting import current_report
 from pv_cases.review import ReviewService
 from pv_cases.sealing import SealingService
 from pv_cases.services import IntakeService
+from pv_cases.signals import SignalService
 from pv_cases.store import SqlCaseStore
 
 
@@ -186,6 +187,14 @@ class Services:
             self.store, review=self.review, followup=self.followup
         )
         self.oversight.access = self.access
+        # Round 13: signal counts — the disproportionality
+        # view over the coded book. The figures fold from the
+        # store's artefacts alone (the builder and the
+        # verifier are two independent folds over the same
+        # record), and its generation act is judged by the
+        # same access control as every other named act.
+        self.signals = SignalService(self.store)
+        self.signals.access = self.access
         # Round 12: the model gateway's ledger reads are judged
         # by the same access control — one denial log for every
         # refused read, the ledger's included.

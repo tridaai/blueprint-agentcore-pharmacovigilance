@@ -143,6 +143,12 @@ class CaseStore(Protocol):
     def add_model_call(self, record) -> None: ...
     def list_model_calls(self, case_id: str | None = None) -> list: ...
     def count_model_calls(self) -> int: ...
+    # Round 13: signal tables. Insert-only — a table over a
+    # moved record is a new table superseding the old one by
+    # link, never an edit (see pv_cases.signals).
+    def add_signal_table(self, table) -> None: ...
+    def get_signal_table(self, table_id: str): ...
+    def list_signal_tables(self) -> list: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -967,6 +973,38 @@ class SqlCaseStore:
         rows = self._run("SELECT COUNT(*) FROM model_calls", fetch="all")
         return int(rows[0][0])
 
+    def add_signal_table(self, table) -> None:
+        self._run(
+            "INSERT INTO signal_tables (table_id, window_start,"
+            " window_end, as_of, payload) VALUES (?,?,?,?,?)",
+            (
+                table.table_id,
+                table.window_start.isoformat(),
+                table.window_end.isoformat(),
+                table.as_of.isoformat(),
+                table.model_dump_json(),
+            ),
+        )
+
+    def get_signal_table(self, table_id: str):
+        from pv_cases.signals import SignalTable
+
+        rows = self._run(
+            "SELECT payload FROM signal_tables WHERE table_id = ?",
+            (table_id,),
+            fetch="all",
+        )
+        return SignalTable.model_validate_json(rows[0][0]) if rows else None
+
+    def list_signal_tables(self) -> list:
+        from pv_cases.signals import SignalTable
+
+        rows = self._run(
+            "SELECT payload FROM signal_tables ORDER BY table_id",
+            fetch="all",
+        )
+        return [SignalTable.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -996,6 +1034,7 @@ class InMemoryCaseStore:
         self.access_denials: dict[str, object] = {}
         self.safety_reports: dict[str, object] = {}
         self.model_calls: dict[str, object] = {}
+        self.signal_tables: dict[str, object] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -1258,3 +1297,12 @@ class InMemoryCaseStore:
 
     def count_model_calls(self) -> int:
         return len(self.model_calls)
+
+    def add_signal_table(self, table) -> None:
+        self.signal_tables[table.table_id] = table
+
+    def get_signal_table(self, table_id: str):
+        return self.signal_tables.get(table_id)
+
+    def list_signal_tables(self) -> list:
+        return [self.signal_tables[k] for k in sorted(self.signal_tables)]

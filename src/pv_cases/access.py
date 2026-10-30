@@ -139,6 +139,11 @@ SURFACE_OVERSIGHT = "oversight"
 # admin do not, and a refused read is existence-hidden exactly
 # as every other case-scoped read is.
 SURFACE_MODEL_LEDGER = "model_ledger"
+# Round 13: the signal tables — aggregate-only artefacts
+# like the oversight reports, and safety data nonetheless:
+# the case-working roles and the auditor read them; intake
+# and case admin do not.
+SURFACE_SIGNAL_COUNTS = "signal_counts"
 SURFACES = [
     SURFACE_CASE,
     SURFACE_EVIDENCE,
@@ -158,6 +163,7 @@ SURFACES = [
     SURFACE_PACKS,
     SURFACE_OVERSIGHT,
     SURFACE_MODEL_LEDGER,
+    SURFACE_SIGNAL_COUNTS,
 ]
 
 # Acts — the named operations the pack gates. These are the
@@ -181,6 +187,10 @@ ACT_RECALL_MEMORY = "recall_memory"
 # the safety scientist's, the operational case-working role.
 # The auditor reads reports; it generates none.
 ACT_GENERATE_OVERSIGHT_REPORT = "generate_oversight_report"
+# Round 13: generating a signal table is a named act — the
+# safety scientist's, like report generation. The auditor
+# reads tables; it generates none.
+ACT_GENERATE_SIGNAL_COUNTS = "generate_signal_counts"
 ACTS = [
     ACT_INTAKE_REPORT,
     ACT_SUBMIT_FOLLOW_UP,
@@ -196,6 +206,7 @@ ACTS = [
     ACT_RELEASE_QUARANTINE,
     ACT_RECALL_MEMORY,
     ACT_GENERATE_OVERSIGHT_REPORT,
+    ACT_GENERATE_SIGNAL_COUNTS,
 ]
 
 # Denial reasons — the closed vocabulary of the denial log.
@@ -298,6 +309,7 @@ _CASEWORK_READS = [
     SURFACE_PACKS,
     SURFACE_OVERSIGHT,
     SURFACE_MODEL_LEDGER,
+    SURFACE_SIGNAL_COUNTS,
 ]
 
 ACCESS_PACK_V1 = AccessPack(
@@ -325,6 +337,7 @@ ACCESS_PACK_V1 = AccessPack(
                 ACT_RELEASE_QUARANTINE,
                 ACT_RECALL_MEMORY,
                 ACT_GENERATE_OVERSIGHT_REPORT,
+                ACT_GENERATE_SIGNAL_COUNTS,
             ],
         ),
         RoleGrant(
@@ -388,6 +401,7 @@ ACCESS_PACK_V1 = AccessPack(
             ROLE_MEDICAL_REVIEWER,
         ],
         ACT_GENERATE_OVERSIGHT_REPORT: [ROLE_SAFETY_SCIENTIST],
+        ACT_GENERATE_SIGNAL_COUNTS: [ROLE_SAFETY_SCIENTIST],
     },
 )
 
@@ -424,6 +438,10 @@ class AccessDenial(BaseModel):
   pack's content fingerprint (see below) is what separates
   the pack's content before and after, the same property the
   gateway's per-call fingerprint relies on (RT-15).
+- **Round 13 joins this pack** on the same terms: the
+  signal-counts surface and the table-generation act were
+  added when the surface itself landed, under this same
+  version string, separated by the same fingerprint.
 """
 
     denial_id: str
