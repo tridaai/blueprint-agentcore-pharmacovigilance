@@ -323,6 +323,26 @@ other blueprints already cover the LangGraph pattern.
     roles, the auditor and the case admin; worked by the
     safety scientist and the case admin.
 
+15. **The safety-reviewer console (Round 15)** is the
+    composition layer the design brief's stack named from
+    the start — a single-file page over one composed read
+    (`pv_cases/console.py`). It introduces no artefact, no
+    table and no verdict: it reads the case list with the
+    current assessments and the clock board's derived
+    states, the review queue, the follow-up board, the
+    coding queue, the quarantine fold, and the standing
+    heads of the oversight, signal and stewardship chains,
+    and its headline counts are counted from the rows it
+    composes. The console joined the access pack as its
+    own surface under the standing version (fingerprint-
+    separated, as Rounds 11–14 joined): entry is judged on
+    it, and each section is additionally filtered by its
+    own surface — a section a role cannot read arrives
+    invisible, without rows or counts. The page itself is
+    a static shell that renders only the data surface's
+    answer; the check script re-performs every figure by
+    a second route and grades the shell for baked-in data.
+
 ## Round map
 
 The full 20-round map lives in the design brief

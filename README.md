@@ -855,6 +855,41 @@ programme.
   performs none of it, and refusals land in the denial log
   before they propagate.
 
+## What Round 15 adds
+
+- **The safety-reviewer console** (`src/pv_cases/console.py`,
+  `src/pv_cases/static/console.html`): the design brief
+  named a single-file analyst console from the first
+  round; every engine surface landed before the page that
+  composes them. The page is served at `GET /console` and
+  renders only what `GET /console/data` returns — a static
+  shell carrying no case data of its own.
+- **A composition, never a second opinion**: the console
+  computes no verdict and stores nothing. Its case rows
+  carry the current assessment's verdicts and the clock
+  board's derived state; its queue rows are the review
+  service's own PHI-minimised queue and the follow-up
+  board's own rows; and its aggregate sections pass
+  through the standing oversight report's, signal table's
+  and steward worklist's own figures — read, never
+  recomputed. A console that derived its own numbers
+  could disagree with the artefacts of record; this one
+  cannot, because it has no numbers of its own — its
+  headline counts are counted from the rows it composes,
+  and `scripts/check_console.py` (or `make console-check`)
+  re-performs every figure by a second route.
+- **Judged like every other surface**: the console is its
+  own surface in the access pack — a carried principal is
+  judged on it before anything is composed, the refusal
+  recorded before it propagates — and each composed
+  section is additionally filtered by its own surface. A
+  section the role cannot read arrives invisible: no
+  rows, and no count to leak. The case-working roles and
+  the quality auditor read the console; intake and case
+  admin are refused at its door, and the denial log
+  section is invisible even to the case-working roles —
+  only the auditor reads refusals on the page.
+
 ## Quick start
 
 ```bash
@@ -872,8 +907,20 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 14 of 20.** Built and gate-green: everything in
-  Rounds 1–13, plus dictionary stewardship — the aggregate
+- **Round 15 of 20.** Built and gate-green: everything in
+  Rounds 1–14, plus the safety-reviewer console — one
+  composed read over the whole book (the cases with their
+  verdicts and clock positions, the review queue, the
+  follow-up board, the coding queue, the quarantine
+  position, and the standing oversight, signal and
+  stewardship artefacts read back, never recomputed),
+  served as a static page at `/console` over a data
+  surface judged on its own surface in the access pack,
+  with every section additionally filtered by its own
+  surface so a role that cannot read a section receives
+  it invisible, without even its count; the composition
+  stores nothing and computes no verdict. Round 14
+  shipped: dictionary stewardship — the aggregate
   worklist over the book's uncoded wordings (migration
   0013): one ranked row per wording computed in code under
   a versioned steward pack (2026.10.1), stating report and
