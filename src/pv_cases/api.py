@@ -34,6 +34,7 @@ from pv_cases.access import (
     SURFACE_MEMORY,
     SURFACE_MODEL_LEDGER,
     SURFACE_OVERSIGHT,
+    SURFACE_SIGNAL_COUNTS,
     SURFACE_QUARANTINE,
     SURFACE_REVIEW,
     SURFACE_SEALING,
@@ -1216,6 +1217,95 @@ def oversight_report_verify(report_id: str, request: Request) -> dict:
     problems = svc().oversight.verify(report)
     return {
         "report_id": report_id,
+        "verified": not problems,
+        "problems": problems,
+    }
+
+
+# ---------------------------------------------------------------------
+# Round 13: signal counts — the pack, generation as a named
+# act, the table reads, and re-performance.
+# ---------------------------------------------------------------------
+
+
+class SignalGenerateRequest(BaseModel):
+    window_start: date
+    window_end: date
+    as_of: date
+    generated_by: str
+
+
+@app.get("/signals/pack")
+def signals_pack(request: Request) -> dict:
+    """The signal pack: the population, attribution and
+    counting rules, the measures a row states, and the
+    stated criteria a pair is flagged against."""
+    _require_surface(request, SURFACE_SIGNAL_COUNTS)
+    from pv_cases.signals import load_signal_pack
+
+    return load_signal_pack().model_dump(mode="json")
+
+
+@app.post("/signals/tables")
+def signals_generate(body: SignalGenerateRequest, request: Request) -> dict:
+    """Generate a table as a named act. The service runs the
+    access judge when the call carries a principal — the
+    safety scientist generates, bound to the named generator;
+    the refusal is recorded in the denial log and answered
+    403 by name (no case's existence rides on this surface).
+    A window whose end precedes its start is refused 422."""
+    from pv_cases.signals import SignalError
+
+    principal = _principal_for(request, SURFACE_SIGNAL_COUNTS)
+    try:
+        table = svc().signals.generate(
+            body.window_start,
+            body.window_end,
+            body.as_of,
+            body.generated_by,
+            principal=principal,
+            today=date.today(),
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))
+    except SignalError as exc:
+        raise HTTPException(422, str(exc))
+    return table.model_dump(mode="json")
+
+
+@app.get("/signals/tables")
+def signals_tables(request: Request) -> list[dict]:
+    """The tables of record, insert-only. A carried principal
+    whose role may not read the signal surface gets the
+    empty list — a filtered list never leaks a count."""
+    if not _surface_visible(request, SURFACE_SIGNAL_COUNTS):
+        return []
+    return [t.model_dump(mode="json") for t in svc().signals.tables()]
+
+
+@app.get("/signals/tables/{table_id}")
+def signals_table(table_id: str, request: Request) -> dict:
+    _require_surface(request, SURFACE_SIGNAL_COUNTS)
+    table = svc().signals.get(table_id)
+    if table is None:
+        raise HTTPException(404, f"no such table: {table_id}")
+    return table.model_dump(mode="json")
+
+
+@app.get("/signals/tables/{table_id}/verify")
+def signals_table_verify(table_id: str, request: Request) -> dict:
+    """Re-perform a stored table against the record as it
+    stands: every cell and measure recomputed by the second
+    path. A table over a since-moved record names the
+    figures that no longer re-perform — the standing answer
+    is a new table superseding it, never an edit."""
+    _require_surface(request, SURFACE_SIGNAL_COUNTS)
+    table = svc().signals.get(table_id)
+    if table is None:
+        raise HTTPException(404, f"no such table: {table_id}")
+    problems = svc().signals.verify(table)
+    return {
+        "table_id": table_id,
         "verified": not problems,
         "problems": problems,
     }

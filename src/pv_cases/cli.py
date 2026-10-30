@@ -8,7 +8,8 @@ memory-retrievals|memory-retention|memory-precedents|
 memory-pack|gateway-invoke|gateway-calls|gateway-pack|
 oversight-pack|oversight-generate|oversight-reports|
 oversight-report|oversight-verify|model-pack|model-ledger|
-model-ledger-verify``
+model-ledger-verify|signals-pack|signals-generate|
+signals-tables|signals-table|signals-verify``
 against the configured store."""
 
 from __future__ import annotations
@@ -54,7 +55,10 @@ USAGE = (
     "oversight-generate <window-start> <window-end> <as-of> <generated_by...>|"
     "oversight-reports|oversight-report <report_id>|"
     "oversight-verify <report_id>|model-pack|"
-    "model-ledger <case_id>|model-ledger-verify"
+    "model-ledger <case_id>|model-ledger-verify|signals-pack|"
+    "signals-generate <window-start> <window-end> <as-of> <generated_by...>|"
+    "signals-tables|signals-table <table_id>|"
+    "signals-verify <table_id>"
 )
 
 
@@ -697,6 +701,80 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         n = svc.store.count_model_calls()
         print(f"model ledger reconciles: {n} record(s) re-derived clean")
+        return 0
+    if cmd == "signals-pack":
+        from pv_cases.signals import load_signal_pack
+
+        print(json.dumps(load_signal_pack().model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "signals-generate" and len(argv) >= 5:
+        from pv_cases.access import AccessDeniedError
+        from pv_cases.signals import SignalError
+
+        try:
+            table = svc.signals.generate(
+                date.fromisoformat(argv[1]),
+                date.fromisoformat(argv[2]),
+                date.fromisoformat(argv[3]),
+                " ".join(argv[4:]),
+                today=today,
+            )
+        except (ValueError, SignalError) as exc:
+            print(f"generation refused: {exc}")
+            return 1
+        except AccessDeniedError as exc:
+            print(f"generation denied: {exc}")
+            return 1
+        flagged = [p for p in table.pairs if p.meets_criteria]
+        print(
+            f"{table.table_id}: window {table.window_start}.."
+            f"{table.window_end} as of {table.as_of}, generated"
+            f" by {table.generated_by} — verified:"
+            f" {table.verified},"
+            f" {table.totals['pairs_counted']['value']} pairs,"
+            f" {len(flagged)} flagged"
+            + (f", supersedes {table.supersedes}" if table.supersedes else "")
+        )
+        for pair in flagged:
+            print(
+                f"  flagged: {pair.product_name} + {pair.preferred_term}"
+                f" — a={pair.a} b={pair.b} c={pair.c} d={pair.d},"
+                f" PRR {pair.prr}, chi-square {pair.chi_square}"
+            )
+        for problem in table.verification_problems:
+            print(f"  - {problem}")
+        return 0
+    if cmd == "signals-tables":
+        tables = svc.signals.tables()
+        if not tables:
+            print("signal tables: none")
+        for table in tables:
+            print(
+                f"{table.table_id}: {table.window_start}.."
+                f"{table.window_end} as of {table.as_of} by"
+                f" {table.generated_by} — verified: {table.verified},"
+                f" {table.totals['pairs_flagged']['value']} flagged"
+            )
+        return 0
+    if cmd == "signals-table" and len(argv) == 2:
+        table = svc.signals.get(argv[1])
+        if table is None:
+            print(f"no such table: {argv[1]}")
+            return 1
+        print(json.dumps(table.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "signals-verify" and len(argv) == 2:
+        table = svc.signals.get(argv[1])
+        if table is None:
+            print(f"no such table: {argv[1]}")
+            return 1
+        problems = svc.signals.verify(table)
+        if problems:
+            print(f"{table.table_id}: DOES NOT RE-PERFORM")
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        print(f"{table.table_id}: re-performs exactly")
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
         from pv_cases.models import DictionaryEntry, ProductDictionaryEntry
