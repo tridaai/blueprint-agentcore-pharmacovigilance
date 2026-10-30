@@ -242,7 +242,11 @@ other blueprints already cover the LangGraph pattern.
     judged at the door against the model pack's
     direct-identifier lists (a payload carrying one is
     refused whole, on the record, naming fields and keys but
-    never values), held text is dropped on the gateway path
+    never values; paths and keys are compared folded —
+    case and separator spellings are not identity — since
+    Round 17, whose red team found the exact-spelling match
+    waving variants like `patient.DOB` and `dateOfBirth`
+    through), held text is dropped on the gateway path
     itself, and the pack's per-case budgets refuse before the
     port is touched — the refusal itself a ledger record. A
     hosted profile that is not configured refuses through

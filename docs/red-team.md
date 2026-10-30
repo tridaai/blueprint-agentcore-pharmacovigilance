@@ -152,3 +152,89 @@ work both findings pointed at, and it closes both.
    `gateway_pack_fingerprint_wrong`, zero-tolerance.
 
 No open findings remain on this page.
+
+## Round 17 amendments — the second red team
+
+This section is appended, not edited into the record above:
+the Round 9 verdicts and the Round 10 closures stand as
+written. Round 17 is a deliberate second pass, over the
+surfaces Rounds 11–16 shipped after the first team went
+home: oversight reporting, the governed model gateway,
+signal counts, dictionary stewardship, the safety-reviewer
+console and the Postgres parity harness. (The AgentCore
+Policy pack itself was not a target: it shipped in Round 8
+and has been graded since — RT-13/RT-14 and the per-call
+fingerprint. What had never been attacked was everything
+built *after* it.) Attacks are kept as regression tests in
+`tests/test_redteam2.py` and, for the headline ones, as the
+zero-tolerance `redteam2_*` counters in the eval gate. One
+attack was a real defect, fixed in this round.
+
+### (g) The model gateway's minimisation door (Round 12)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-28 | Direct identifiers proposed to the model gateway under variant spellings of the pack's keys and field paths — `Date_Of_Birth`, `date-of-birth`, `dateOfBirth`, `DOB`, `Patient_Name`, `patient name`, `EMAIL`, `Reporter.Name`, `patient.DOB`. | **defect** — fixed: the door matched field paths and value keys by exact string, so every variant spelling walked a direct identifier through to the port while the pack's exact lowercase snake_case was refused. The door now folds paths and keys before comparing (case and the separator spellings are not identity: `_fold_key` in `model_gateway.py`), and names the spelling as carried in the refusal. The pack data is unchanged — its fingerprint is untouched; the comparison was the defect. |
+| RT-29 | An exact identifier key buried at depth inside lists and dicts in a fact's value. | held — refused, as the door's stated reach promises (any depth of a fact's value). The door's contract is structural — field paths and key names, never values: identifier *prose* inside a free-text value is not a key at any depth, and no fact the assembler builds carries narrative text (RT-02). That boundary is stated here so a future change to it is deliberate. |
+| RT-30 | The refusal record itself leaking what the door refused: the identifier values appearing anywhere in the case's model-call records. | held — the refusal is recorded naming keys and fields only; a byte sweep over the case's ledger finds the key names and neither planted value, and the wrapped port's counter stays at zero. |
+
+### (h) Oversight reporting (Round 11)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-31 | Identifier leakage as *values*: a byte sweep over a struck report's full payload for every case id, reporter name, reporter email, patient initials and date of birth in the book it was struck over. | held — nothing found. Round 11 graded a key scan over the payload shape; this grades the whole payload, values included. |
+| RT-32 | A rate over a tiny population (denominator 1) smuggling identity alongside the figure. | held — every rate in the artefact is exactly `{value, numerator, denominator}`; a small population exposes its counts, never an identity field. The counts themselves are the oversight product, stated since Round 11. |
+
+### (i) Signal counts (Round 13)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-33 | The RT-31 sweep over a struck signal table. | held — pairs and totals state counts and measures only; no identifier of the book appears as a value. |
+| RT-34 | The flag rule at its exact edges: PRR exactly 2.0000 with chi-square over its floor (flags); PRR 1.9950 under a large chi-square (never flags); chi-square ~3.64 under PRR exactly 2.0000 (never flags), the same table doubled (flags); a no-comparator pair under one-sided counts (never flags). | held — the measures and the verdict are computed in code from the 2×2 and the pack's thresholds, and the edges land exactly where the pack states them. |
+
+### (j) Dictionary stewardship (Round 14)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-35 | The value sweep over the stewardship artefacts — worklist, candidate, decision record. | held — wordings, terms and counts only; no case id, reporter or initials as a value anywhere. |
+| RT-36 | Rewriting history through a steward enactment: confirm a mapping, then run a fresh coding pass over a case coded *before* the decision and make its coding of record move. | held — the original decision stands byte-identical after the pass: history is never rewritten. What the pass does is the designed, Round 9-graded migration: it appends its own decision under the new version, superseding the old by link, because a fresh coding pass is a new coding act performed after the decision date — the version governs cases *coded* on or after it. A human (manual) decision is never auto-superseded at any version, and a case arriving after the decision codes under the new version on its first pass, pinning the version on the decision. The attack's value was forcing the distinction onto the record: the artefact of record never moves; a standing *automatic* coding can be superseded by a deliberate new pass, and the supersession is itself an artefact. |
+
+### (k) The safety-reviewer console (Round 15)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-37 | Held text surfacing in the composed read: a planted held description's marker searched across the whole console payload for two different readers. | held — the marker appears nowhere; the quarantine section states the hold and its metadata, never the text. |
+| RT-38 | The console writing by reading: the store's artefact counts and the denial log compared before and after reads by three granted principals. | held — byte-identical counts; a read stores nothing and appends nothing. |
+| RT-39 | Inferring the auditor-only denial log from a non-auditor's payload: plant a denial (a refused console entry), then read as a medical reviewer. | held — the section arrives as exactly `{"visible": False}`, and the denied principal's id appears nowhere else in that reader's payload, while the auditor's own payload serves the planted denial. |
+
+### (l) Existence hiding on the post-Round-10 API surfaces
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-40 | Existence oracles on the signal-counts API: a principal with no surface reads a real table id and a ghost id. | held — the surface is judged before existence is, so both answers are the identical refusal; a granted reader gets the table, and a ghost id under a granted reader is a plain 404. |
+
+### (m) The parity harness (Round 16)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-41 | The harness grading itself shallowly: two figure sheets differing in one deeply nested scalar. | held — `compare_sheets` names the divergence at its path; identical sheets produce none. The comparator that grades dialect parity compares all the way down. |
+
+## Open findings after Round 17
+
+None. The round's one defect (RT-28) was fixed in the
+round; every other attack met the defence it should have,
+and the two stated boundaries the pass surfaced — the
+door's structural contract (RT-29) and the distinction
+between the coding of record and a fresh pass's migration
+(RT-36) — are recorded above so they are decisions on the
+page, not assumptions in the code.
+
+## Eval depth added with this round
+
+Six zero-tolerance counters (`redteam2_*`): the door's
+variant spellings, identifier leakage across the three
+aggregate artefacts, the signal flag edges, the steward
+history invariant, held text in the console, and console
+write-freedom — each computed over a fresh service graph
+planted for the round, alongside the traps in
+`tests/test_redteam2.py`.

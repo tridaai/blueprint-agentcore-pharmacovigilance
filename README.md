@@ -930,6 +930,63 @@ programme.
   provided database and drops it on success, so the check
   never touches standing tables.
 
+## What Round 17 adds
+
+- **The second red team** (`tests/test_redteam2.py`,
+  `docs/red-team.md`): Round 9's pass covered the trust
+  boundaries Rounds 1–8 built. Rounds 11–16 then shipped
+  six new surfaces — oversight reporting, the governed
+  model gateway, signal counts, dictionary stewardship,
+  the console and the parity harness — and none of them
+  had a deliberate attack pass of its own. This round is
+  that pass: fourteen attacks in Round 9's idiom, each
+  kept forever as a regression trap, the headline ones
+  also as zero-tolerance `redteam2_*` counters in the
+  eval gate.
+- **One real defect, fixed**: the model gateway's
+  minimisation door (Round 12) matched the pack's
+  direct-identifier field paths and value keys by exact
+  string. `patient.DOB`, `Reporter.Name`, a nested
+  `dateOfBirth` or `date-of-birth` were not the pack's
+  exact lowercase snake_case, so they were waved through
+  to the port. The door now folds paths and keys before
+  comparing — case and the separator spellings are not
+  identity — and names the spelling as carried in the
+  refusal. The pack data, and with it the per-call
+  fingerprint discipline, is unchanged; the comparison
+  was the defect.
+- **What held, and is now trapped**: identifier keys at
+  any depth of a fact's value; refusal records that name
+  keys and never values; the three aggregate artefacts
+  (the oversight report, the signal table, the steward
+  worklist and its candidate and decision) swept for the
+  book's identifiers at the level of *values*, not only
+  key names — nothing found; every rate figure carrying
+  exactly its value, numerator and denominator; the
+  signal flag rule at its exact edges (PRR on the
+  threshold, a hair under it, chi-square a hair under
+  its floor, the no-comparator pair); a steward
+  enactment attacked for rewriting history — the coding
+  of record stands byte-identical, a fresh pass appends
+  its migration by link, exactly as designed since
+  Round 9, and a post-decision case codes under the new
+  version pinning it; held text nowhere in the console
+  payload; a console read that writes nothing; the
+  auditor-only denial section neither served to nor
+  inferable from another reader's payload; existence on
+  the signal-counts API judged behind the surface, so a
+  surfaceless reader cannot tell a real table id from a
+  ghost; and the parity comparator itself, attacked with
+  a divergence buried in one deeply nested scalar.
+- **Stated boundaries, on the record**: the door's
+  contract is structural (field paths and key names);
+  identifier prose inside a free-text value is outside
+  it, and no assembler fact carries narrative text. And
+  the migration distinction: the artefact of record
+  never moves, while a standing automatic coding can be
+  superseded by a deliberate new pass — the supersession
+  is itself an artefact. No open findings remain.
+
 ## Quick start
 
 ```bash
@@ -947,9 +1004,26 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 16 of 20.** Built and gate-green: everything in
-  Rounds 1–15, plus the Postgres production profile stood
-  up and graded — a standing parity harness
+- **Round 17 of 20.** Built and gate-green: everything in
+  Rounds 1–16, plus the second red team — a deliberate
+  attack pass over the surfaces Rounds 11–16 built, in
+  Round 9's pattern (traps in `tests/test_redteam2.py`,
+  the `redteam2_*` eval counters, the record appended to
+  `docs/red-team.md`). Fourteen attacks, one real defect,
+  fixed in the round: the model gateway's minimisation
+  door matched identifier keys by their exact spelling,
+  so a case, separator or camelCase variant of a
+  direct-identifier key walked through it; the door now
+  folds paths and keys before comparing. The rest held —
+  the aggregate artefacts swept for identifiers as
+  values, the signal flag rule at its exact edges, a
+  steward enactment that appends but never rewrites,
+  held text nowhere in the console, a console read that
+  writes nothing, the denial section neither served nor
+  inferable, existence judged behind the surface on the
+  newer APIs, and the parity comparator itself. No open
+  findings. Round 16 shipped: the Postgres production
+  profile stood up and graded — a standing parity harness
   (`scripts/check_postgres.py`, `make postgres-check`)
   that runs the demo's core walk on both stores and
   compares the resulting figure sheets field for field:
