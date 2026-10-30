@@ -343,6 +343,26 @@ other blueprints already cover the LangGraph pattern.
     answer; the check script re-performs every figure by
     a second route and grades the shell for baked-in data.
 
+16. **Dialect parity (Round 16)** is the production-profile
+    gate. One scripted walk (`pv_cases/parity.py`) runs the
+    demo's core path — intake, validity, dedup, coding,
+    clocks, dual review, seal, export, and the later
+    rounds' beats (quarantine, gateway, model ledger,
+    oversight, signals, stewardship, console, denial log) —
+    against a store and reads the result back as a figure
+    sheet of plain JSON values, extracted from the stored
+    artefacts rather than the services' returns. The check
+    (`scripts/check_postgres.py`) verifies the server is
+    the supported profile (UTF-8), that the migration
+    ledger on Postgres lists exactly the dialect's files,
+    and that the Postgres sheet agrees with the SQLite
+    sheet field for field, divergences named by path. The
+    walk runs in a throwaway schema of the provided
+    database. It found no divergence in the current code —
+    its standing value is that the next one cannot ship
+    silently, the way the Round 10 placeholder defect
+    nearly did.
+
 ## Round map
 
 The full 20-round map lives in the design brief

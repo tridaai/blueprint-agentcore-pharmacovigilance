@@ -890,6 +890,46 @@ programme.
   section is invisible even to the case-working roles —
   only the auditor reads refusals on the page.
 
+## What Round 16 adds
+
+- **The Postgres production profile, stood up and graded**
+  (`src/pv_cases/parity.py`, `scripts/check_postgres.py`,
+  `make postgres-check`): the dialect store, both migration
+  trees and the `DATABASE_URL` switch existed from the
+  early rounds, but fifteen rounds of gates were graded on
+  SQLite only — the one Postgres defect found before this
+  round (the migration runner speaking `?` to a psycopg
+  connection, Round 10) was found by accident. The parity
+  harness replaces the accident with a discipline: one
+  deterministic walk — intake through the validity gate,
+  dedup, coding, the assessment packs and their clocks,
+  dual-control review, sealing, export, quarantine, the
+  gateway, the model ledger, the three standing aggregates,
+  the console and the denial log — runs against a store,
+  and everything it produces is read back as a figure
+  sheet of plain JSON values. The same walk runs on the
+  other dialect and the sheets are compared field for
+  field; a divergence is named by its path, never averaged
+  over.
+- **The verdict on the current code**: the full migration
+  chain (all thirteen files) stands on a real PostgreSQL
+  database, the walk serves end to end there, its export
+  passes the offline verifier, and the two sheets agree
+  exactly — 61,714 canonical bytes with identical hashes,
+  stable across processes and hash seeds. No dialect
+  divergence was found in the walk's reach; the harness,
+  not the finding, is the deliverable, and it stays as the
+  standing gate (`tests/test_postgres_parity.py` pins the
+  walk on SQLite in the suite, and on Postgres wherever
+  `PV_TEST_DATABASE_URL` provides a database).
+- **The supported profile, stated**: a UTF-8 PostgreSQL
+  database — the repo's JSON-text contract assumes it end
+  to end, the check reads the server's encoding and
+  refuses to grade a non-UTF-8 database as the production
+  profile. The walk runs in its own schema inside the
+  provided database and drops it on success, so the check
+  never touches standing tables.
+
 ## Quick start
 
 ```bash
@@ -907,8 +947,19 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 15 of 20.** Built and gate-green: everything in
-  Rounds 1–14, plus the safety-reviewer console — one
+- **Round 16 of 20.** Built and gate-green: everything in
+  Rounds 1–15, plus the Postgres production profile stood
+  up and graded — a standing parity harness
+  (`scripts/check_postgres.py`, `make postgres-check`)
+  that runs the demo's core walk on both stores and
+  compares the resulting figure sheets field for field:
+  all thirteen migrations standing on a real UTF-8
+  Postgres, the walk serving end to end there, the export
+  verifying, and zero divergences against the SQLite
+  sheet (61,714 canonical bytes, identical hashes). The
+  parity tests pin the walk on SQLite in the suite and on
+  Postgres wherever a database is provided. Round 15
+  shipped: the safety-reviewer console — one
   composed read over the whole book (the cases with their
   verdicts and clock positions, the review queue, the
   follow-up board, the coding queue, the quarantine
