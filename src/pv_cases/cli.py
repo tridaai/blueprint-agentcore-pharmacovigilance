@@ -989,7 +989,7 @@ def main(argv: list[str] | None = None) -> int:
             f" citation-changed {measurement.citation_changed},"
             f" added {measurement.added},"
             f" dropped {measurement.dropped};"
-            f" verbatim: {measurement.verbatim},"
+            f" verbatim: {measurement.approved_verbatim},"
             f" verified: {measurement.verified}"
             + (
                 f", supersedes {measurement.supersedes}"

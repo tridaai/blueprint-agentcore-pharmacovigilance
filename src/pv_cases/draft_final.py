@@ -271,7 +271,7 @@ class DraftFinalMeasurement(BaseModel):
     citation_changed: int
     added: int
     dropped: int
-    verbatim: bool
+    approved_verbatim: bool
     changes: list[StatementChange] = Field(default_factory=list)
     record_fingerprint: str
     supersedes: str | None = None
@@ -464,7 +464,7 @@ def _figures_from_selection(
         "distinct_drafts": len(
             {summary_content_hash(s) for s in counted}
         ),
-        "verbatim": summary_content_hash(draft) == bound_hash,
+        "approved_verbatim": summary_content_hash(draft) == bound_hash,
         "record_fingerprint": _fingerprint(input_ids),
         **figures,
     }
@@ -680,7 +680,7 @@ def verify_measurement(store, measurement: DraftFinalMeasurement) -> list[str]:
         "citation_changed",
         "added",
         "dropped",
-        "verbatim",
+        "approved_verbatim",
         "record_fingerprint",
     ):
         got = getattr(measurement, field)
@@ -703,6 +703,31 @@ def verify_measurement(store, measurement: DraftFinalMeasurement) -> list[str]:
     return problems
 
 
+def _standing(
+    measurements: list[DraftFinalMeasurement],
+) -> DraftFinalMeasurement | None:
+    """The standing measurement of a set: the head of the
+    supersession chain — the one no other measurement
+    supersedes (the coding layer's current-artefact rule,
+    applied to this artefact). The chain, not the strike
+    date, is the order: two measurements struck the same
+    day over a record that moved between them stand in
+    chain order regardless of their ids."""
+    if not measurements:
+        return None
+    superseded = {
+        m.supersedes for m in measurements if m.supersedes
+    }
+    heads = [
+        m for m in measurements if m.measurement_id not in superseded
+    ]
+    if not heads:
+        return None
+    return sorted(
+        heads, key=lambda m: (m.measured_on, m.measurement_id)
+    )[-1]
+
+
 def book_rollup(store) -> dict[str, Any]:
     """The book's rubber-stamp figure, folded at read time
     from the standing measurement of every measured case:
@@ -711,16 +736,18 @@ def book_rollup(store) -> dict[str, Any]:
     rate with its denominator on the figure. A fold, not
     an artefact — the measurements are the evidence; this
     is their count, recomputed on every read."""
-    standing: dict[str, DraftFinalMeasurement] = {}
+    by_case: dict[str, list[DraftFinalMeasurement]] = {}
     for measurement in store.list_draft_final_measurements():
-        current = standing.get(measurement.case_id)
-        if current is None or (
-            measurement.measured_on,
-            measurement.measurement_id,
-        ) > (current.measured_on, current.measurement_id):
-            standing[measurement.case_id] = measurement
+        by_case.setdefault(measurement.case_id, []).append(measurement)
+    standing = {
+        case_id: head
+        for case_id, measurements in by_case.items()
+        if (head := _standing(measurements)) is not None
+    }
     measured = len(standing)
-    verbatim = sum(1 for m in standing.values() if m.verbatim)
+    verbatim = sum(
+        1 for m in standing.values() if m.approved_verbatim
+    )
     return {
         "measured_cases": measured,
         "verbatim_approvals": verbatim,
@@ -794,16 +821,9 @@ class DraftFinalService:
         standing = self.store.get_draft_final_measurement(measurement_id)
         if standing is not None:
             return standing
-        prior = [
-            m
-            for m in self.store.list_draft_final_measurements(case_id)
-        ]
-        supersedes = None
-        if prior:
-            latest = sorted(
-                prior, key=lambda m: (m.measured_on, m.measurement_id)
-            )[-1]
-            supersedes = latest.measurement_id
+        prior = self.store.list_draft_final_measurements(case_id)
+        head = _standing(prior)
+        supersedes = head.measurement_id if head is not None else None
         measurement = DraftFinalMeasurement(
             measurement_id=measurement_id,
             case_id=case_id,
@@ -823,7 +843,7 @@ class DraftFinalService:
             citation_changed=figures["citation_changed"],
             added=figures["added"],
             dropped=figures["dropped"],
-            verbatim=figures["verbatim"],
+            approved_verbatim=figures["approved_verbatim"],
             changes=figures["changes"],
             record_fingerprint=fingerprint,
             supersedes=supersedes,
@@ -835,14 +855,12 @@ class DraftFinalService:
         return measurement
 
     def get(self, case_id: str) -> DraftFinalMeasurement | None:
-        """The case's standing measurement — the latest
-        struck — or None when none has been struck."""
-        prior = self.store.list_draft_final_measurements(case_id)
-        if not prior:
-            return None
-        return sorted(
-            prior, key=lambda m: (m.measured_on, m.measurement_id)
-        )[-1]
+        """The case's standing measurement — the head of
+        its supersession chain — or None when none has
+        been struck."""
+        return _standing(
+            self.store.list_draft_final_measurements(case_id)
+        )
 
     def measurements(self) -> list[DraftFinalMeasurement]:
         return self.store.list_draft_final_measurements()

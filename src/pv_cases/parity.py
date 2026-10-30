@@ -405,7 +405,7 @@ def run_core_walk(svc: Services) -> dict:
             "citation_changed": stored.citation_changed,
             "added": stored.added,
             "dropped": stored.dropped,
-            "verbatim": stored.verbatim,
+            "approved_verbatim": stored.approved_verbatim,
             "changes": [
                 {"kind": c.kind, "statement_hash": c.statement_hash}
                 for c in stored.changes
