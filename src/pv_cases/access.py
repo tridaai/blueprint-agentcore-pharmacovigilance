@@ -160,6 +160,13 @@ SURFACE_DICTIONARY_STEWARDSHIP = "dictionary_stewardship"
 # own surface — a section the role cannot read arrives
 # empty, never with its count.
 SURFACE_CONSOLE = "console"
+# Round 18: the draft-vs-final review measurements — a
+# case-scoped read like the model ledger it sits beside:
+# the case-working roles and the auditor read a case's
+# measurement; intake and case admin do not, and a refused
+# read is existence-hidden exactly as every other
+# case-scoped read is.
+SURFACE_DRAFT_FINAL = "draft_final"
 SURFACES = [
     SURFACE_CASE,
     SURFACE_EVIDENCE,
@@ -182,6 +189,7 @@ SURFACES = [
     SURFACE_SIGNAL_COUNTS,
     SURFACE_DICTIONARY_STEWARDSHIP,
     SURFACE_CONSOLE,
+    SURFACE_DRAFT_FINAL,
 ]
 
 # Acts — the named operations the pack gates. These are the
@@ -220,6 +228,11 @@ ACT_GENERATE_SIGNAL_COUNTS = "generate_signal_counts"
 ACT_GENERATE_STEWARD_WORKLIST = "generate_steward_worklist"
 ACT_PROPOSE_STEWARD_MAPPING = "propose_steward_mapping"
 ACT_DECIDE_STEWARD_MAPPING = "decide_steward_mapping"
+# Round 18: striking a case's draft-vs-final measurement
+# is a named act — the safety scientist's, like report
+# and table generation. The auditor reads measurements;
+# it strikes none.
+ACT_MEASURE_DRAFT_FINAL = "measure_draft_final"
 ACTS = [
     ACT_INTAKE_REPORT,
     ACT_SUBMIT_FOLLOW_UP,
@@ -239,6 +252,7 @@ ACTS = [
     ACT_GENERATE_STEWARD_WORKLIST,
     ACT_PROPOSE_STEWARD_MAPPING,
     ACT_DECIDE_STEWARD_MAPPING,
+    ACT_MEASURE_DRAFT_FINAL,
 ]
 
 # Denial reasons — the closed vocabulary of the denial log.
@@ -344,6 +358,7 @@ _CASEWORK_READS = [
     SURFACE_SIGNAL_COUNTS,
     SURFACE_DICTIONARY_STEWARDSHIP,
     SURFACE_CONSOLE,
+    SURFACE_DRAFT_FINAL,
 ]
 
 ACCESS_PACK_V1 = AccessPack(
@@ -375,6 +390,7 @@ ACCESS_PACK_V1 = AccessPack(
                 ACT_GENERATE_STEWARD_WORKLIST,
                 ACT_PROPOSE_STEWARD_MAPPING,
                 ACT_DECIDE_STEWARD_MAPPING,
+                ACT_MEASURE_DRAFT_FINAL,
             ],
         ),
         RoleGrant(
@@ -457,6 +473,7 @@ ACCESS_PACK_V1 = AccessPack(
             ROLE_SAFETY_SCIENTIST,
             ROLE_CASE_ADMIN,
         ],
+        ACT_MEASURE_DRAFT_FINAL: [ROLE_SAFETY_SCIENTIST],
     },
 )
 
@@ -506,6 +523,10 @@ class AccessDenial(BaseModel):
   console surface was added when the surface itself
   landed, under this same version string, separated by
   the same fingerprint.
+- **Round 18 joins this pack** on the same terms: the
+  draft-final surface and the measurement act were added
+  when the surface itself landed, under this same
+  version string, separated by the same fingerprint.
 """
 
     denial_id: str

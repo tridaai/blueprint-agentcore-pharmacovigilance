@@ -162,6 +162,13 @@ class CaseStore(Protocol):
     def list_steward_candidates(self) -> list: ...
     def add_steward_decision(self, decision) -> None: ...
     def list_steward_decisions(self, candidate_id: str | None = None) -> list: ...
+    # Round 18: draft-vs-final measurements. Insert-only —
+    # a measurement over a moved record is a new measurement
+    # superseding the case's standing one by link, never an
+    # edit (see pv_cases.draft_final).
+    def add_draft_final_measurement(self, measurement) -> None: ...
+    def get_draft_final_measurement(self, measurement_id: str): ...
+    def list_draft_final_measurements(self, case_id: str | None = None) -> list: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -1106,6 +1113,54 @@ class SqlCaseStore:
             )
         return [StewardDecision.model_validate_json(r[0]) for r in rows]
 
+    def add_draft_final_measurement(self, measurement) -> None:
+        self._run(
+            "INSERT INTO draft_final_measurements (measurement_id,"
+            " case_id, payload) VALUES (?,?,?)",
+            (
+                measurement.measurement_id,
+                measurement.case_id,
+                measurement.model_dump_json(),
+            ),
+        )
+
+    def get_draft_final_measurement(self, measurement_id: str):
+        from pv_cases.draft_final import DraftFinalMeasurement
+
+        rows = self._run(
+            "SELECT payload FROM draft_final_measurements"
+            " WHERE measurement_id = ?",
+            (measurement_id,),
+            fetch="all",
+        )
+        return (
+            DraftFinalMeasurement.model_validate_json(rows[0][0])
+            if rows
+            else None
+        )
+
+    def list_draft_final_measurements(
+        self, case_id: str | None = None
+    ) -> list:
+        from pv_cases.draft_final import DraftFinalMeasurement
+
+        if case_id is None:
+            rows = self._run(
+                "SELECT payload FROM draft_final_measurements"
+                " ORDER BY measurement_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM draft_final_measurements"
+                " WHERE case_id = ? ORDER BY measurement_id",
+                (case_id,),
+                fetch="all",
+            )
+        return [
+            DraftFinalMeasurement.model_validate_json(r[0]) for r in rows
+        ]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -1139,6 +1194,7 @@ class InMemoryCaseStore:
         self.steward_worklists: dict[str, object] = {}
         self.steward_candidates: dict[str, object] = {}
         self.steward_decisions: list = []
+        self.draft_final_measurements: dict[str, object] = {}
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -1442,3 +1498,22 @@ class InMemoryCaseStore:
         if candidate_id is not None:
             items = [d for d in items if d.candidate_id == candidate_id]
         return sorted(items, key=lambda d: d.decision_id)
+
+    def add_draft_final_measurement(self, measurement) -> None:
+        self.draft_final_measurements[measurement.measurement_id] = (
+            measurement
+        )
+
+    def get_draft_final_measurement(self, measurement_id: str):
+        return self.draft_final_measurements.get(measurement_id)
+
+    def list_draft_final_measurements(
+        self, case_id: str | None = None
+    ) -> list:
+        items = [
+            self.draft_final_measurements[k]
+            for k in sorted(self.draft_final_measurements)
+        ]
+        if case_id is not None:
+            items = [m for m in items if m.case_id == case_id]
+        return items

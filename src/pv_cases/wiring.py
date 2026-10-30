@@ -12,6 +12,7 @@ from pv_cases.coding import CodingService, lookup_event
 from pv_cases.config import Settings
 from pv_cases.console import ConsoleService
 from pv_cases.dedup import DedupService
+from pv_cases.draft_final import DraftFinalService
 from pv_cases.evidence import EvidenceChain
 from pv_cases.followup import FollowUpService
 from pv_cases.gateway import (
@@ -224,6 +225,18 @@ class Services:
             signals=self.signals,
             steward=self.steward,
         )
+        # Round 18: draft-vs-final review measurement —
+        # the distance between the first summary the agent
+        # assembled for a case and the summary its
+        # dual-control review approved, struck as an
+        # insert-only artefact over the record. It reads
+        # the review layer's derived view to select the
+        # final, and its act is judged by the same access
+        # control as every other named act.
+        self.draft_final = DraftFinalService(
+            self.store, review=self.review
+        )
+        self.draft_final.access = self.access
 
     def _dictionary_lookup(self, verbatim: str) -> dict:
         """The gateway's dictionary tool: the coding layer's own
