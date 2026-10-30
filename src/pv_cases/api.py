@@ -34,6 +34,7 @@ from pv_cases.access import (
     SURFACE_MEMORY,
     SURFACE_MODEL_LEDGER,
     SURFACE_OVERSIGHT,
+    SURFACE_DICTIONARY_STEWARDSHIP,
     SURFACE_SIGNAL_COUNTS,
     SURFACE_QUARANTINE,
     SURFACE_REVIEW,
@@ -1309,6 +1310,205 @@ def signals_table_verify(table_id: str, request: Request) -> dict:
         "verified": not problems,
         "problems": problems,
     }
+
+
+# ---------------------------------------------------------------------
+# Round 14: dictionary stewardship — the pack, worklist
+# generation as a named act, the worklist reads and
+# re-performance, and the candidate route under dual control.
+# ---------------------------------------------------------------------
+
+
+class StewardGenerateRequest(BaseModel):
+    as_of: date
+    generated_by: str
+
+
+class StewardProposeRequest(BaseModel):
+    worklist_id: str
+    reported_wording: str
+    subject_kind: str
+    proposed_by: str
+    preferred_term: str | None = None
+    soc: str | None = None
+    product_code: str | None = None
+    synonyms: list[str] = []
+    note: str = ""
+
+
+class StewardDecideRequest(BaseModel):
+    decision: str
+    decided_by: str
+    rationale: str = ""
+
+
+def _candidate_view(candidate) -> dict:
+    view = candidate.model_dump(mode="json")
+    record = svc().steward.decision_for(candidate.candidate_id)
+    view["state"] = svc().steward.candidate_state(candidate.candidate_id)
+    view["decision"] = (
+        record.model_dump(mode="json") if record is not None else None
+    )
+    return view
+
+
+@app.get("/steward/pack")
+def steward_pack(request: Request) -> dict:
+    """The steward pack: the population, aggregation and
+    ranking rules a worklist's rows mean, the candidate and
+    dual-control rules, and the role rule for the surface."""
+    _require_surface(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    from pv_cases.steward import load_steward_pack
+
+    return load_steward_pack().model_dump(mode="json")
+
+
+@app.post("/steward/worklists")
+def steward_generate(body: StewardGenerateRequest, request: Request) -> dict:
+    """Strike a worklist as a named act. The service runs
+    the access judge when the call carries a principal — a
+    stewardship act, the principal bound to the named
+    generator; the refusal is recorded in the denial log
+    and answered 403 by name (no case's existence rides on
+    this surface)."""
+    from pv_cases.steward import StewardError
+
+    principal = _principal_for(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    try:
+        worklist = svc().steward.generate(
+            body.as_of,
+            body.generated_by,
+            principal=principal,
+            today=date.today(),
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))
+    except StewardError as exc:
+        raise HTTPException(422, str(exc))
+    return worklist.model_dump(mode="json")
+
+
+@app.get("/steward/worklists")
+def steward_worklists(request: Request) -> list[dict]:
+    """The worklists of record, insert-only. A carried
+    principal whose role may not read the stewardship
+    surface gets the empty list — a filtered list never
+    leaks a count."""
+    if not _surface_visible(request, SURFACE_DICTIONARY_STEWARDSHIP):
+        return []
+    return [w.model_dump(mode="json") for w in svc().steward.worklists()]
+
+
+@app.get("/steward/worklists/{worklist_id}")
+def steward_worklist(worklist_id: str, request: Request) -> dict:
+    _require_surface(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    worklist = svc().steward.get_worklist(worklist_id)
+    if worklist is None:
+        raise HTTPException(404, f"no such worklist: {worklist_id}")
+    return worklist.model_dump(mode="json")
+
+
+@app.get("/steward/worklists/{worklist_id}/verify")
+def steward_worklist_verify(worklist_id: str, request: Request) -> dict:
+    """Re-perform a stored worklist against the record as
+    it stands: every row and total recomputed by the
+    second path. A worklist over a since-moved record
+    names the figures that no longer re-perform — the
+    standing answer is a new worklist superseding it,
+    never an edit."""
+    _require_surface(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    worklist = svc().steward.get_worklist(worklist_id)
+    if worklist is None:
+        raise HTTPException(404, f"no such worklist: {worklist_id}")
+    problems = svc().steward.verify(worklist)
+    return {
+        "worklist_id": worklist_id,
+        "verified": not problems,
+        "problems": problems,
+    }
+
+
+@app.post("/steward/candidates")
+def steward_propose(body: StewardProposeRequest, request: Request) -> dict:
+    """Record a candidate mapping against a worklist row,
+    as a named steward's act. The service judges the act
+    when the call carries a principal; a proposal against
+    no row, for a wording the dictionary already takes, or
+    for an ambiguous wording is refused 422 with the reason
+    named. Nothing is enacted by a proposal."""
+    from pv_cases.steward import StewardError
+
+    principal = _principal_for(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    try:
+        candidate = svc().steward.propose(
+            body.worklist_id,
+            body.reported_wording,
+            body.subject_kind,
+            body.proposed_by,
+            preferred_term=body.preferred_term,
+            soc=body.soc,
+            product_code=body.product_code,
+            synonyms=body.synonyms,
+            note=body.note,
+            principal=principal,
+            today=date.today(),
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))
+    except StewardError as exc:
+        raise HTTPException(422, str(exc))
+    return _candidate_view(candidate)
+
+
+@app.get("/steward/candidates")
+def steward_candidates(request: Request) -> list[dict]:
+    """The candidates of record with their derived states.
+    A carried principal whose role may not read the
+    stewardship surface gets the empty list."""
+    if not _surface_visible(request, SURFACE_DICTIONARY_STEWARDSHIP):
+        return []
+    return [_candidate_view(c) for c in svc().steward.candidates()]
+
+
+@app.get("/steward/candidates/{candidate_id}")
+def steward_candidate(candidate_id: str, request: Request) -> dict:
+    _require_surface(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    candidate = svc().steward.get_candidate(candidate_id)
+    if candidate is None:
+        raise HTTPException(404, f"no such candidate: {candidate_id}")
+    return _candidate_view(candidate)
+
+
+@app.post("/steward/candidates/{candidate_id}/decisions")
+def steward_decide(
+    candidate_id: str, body: StewardDecideRequest, request: Request
+) -> dict:
+    """Decide a candidate, as a second named steward's
+    act. Dual control is judged in the service: the
+    proposer may not decide their own candidate (422), a
+    decided candidate does not move (422), and a
+    confirmation the dictionary refuses at enactment
+    records no decision (422). A confirmation mints a new
+    dictionary version; no coded case is touched."""
+    from pv_cases.steward import StewardError
+
+    principal = _principal_for(request, SURFACE_DICTIONARY_STEWARDSHIP)
+    if svc().steward.get_candidate(candidate_id) is None:
+        raise HTTPException(404, f"no such candidate: {candidate_id}")
+    try:
+        record = svc().steward.decide(
+            candidate_id,
+            body.decision,
+            body.decided_by,
+            body.rationale,
+            principal=principal,
+            today=date.today(),
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))
+    except StewardError as exc:
+        raise HTTPException(422, str(exc))
+    return record.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------

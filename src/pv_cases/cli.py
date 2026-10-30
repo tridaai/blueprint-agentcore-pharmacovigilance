@@ -9,7 +9,10 @@ memory-pack|gateway-invoke|gateway-calls|gateway-pack|
 oversight-pack|oversight-generate|oversight-reports|
 oversight-report|oversight-verify|model-pack|model-ledger|
 model-ledger-verify|signals-pack|signals-generate|
-signals-tables|signals-table|signals-verify``
+signals-tables|signals-table|signals-verify|steward-pack|
+steward-generate|steward-worklists|steward-worklist|
+steward-verify|steward-propose|steward-candidates|
+steward-candidate|steward-decide``
 against the configured store."""
 
 from __future__ import annotations
@@ -58,7 +61,13 @@ USAGE = (
     "model-ledger <case_id>|model-ledger-verify|signals-pack|"
     "signals-generate <window-start> <window-end> <as-of> <generated_by...>|"
     "signals-tables|signals-table <table_id>|"
-    "signals-verify <table_id>"
+    "signals-verify <table_id>|steward-pack|"
+    "steward-generate <as-of> <generated_by...>|"
+    "steward-worklists|steward-worklist <worklist_id>|"
+    "steward-verify <worklist_id>|"
+    "steward-propose <worklist_id> <proposed_by> <proposal-json>|"
+    "steward-candidates|steward-candidate <candidate_id>|"
+    "steward-decide <candidate_id> <confirm|reject> <decided_by...>"
 )
 
 
@@ -775,6 +784,167 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  - {problem}")
             return 1
         print(f"{table.table_id}: re-performs exactly")
+        return 0
+    if cmd == "steward-pack":
+        from pv_cases.steward import load_steward_pack
+
+        print(json.dumps(load_steward_pack().model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "steward-generate" and len(argv) >= 3:
+        from pv_cases.access import AccessDeniedError
+        from pv_cases.steward import StewardError
+
+        try:
+            worklist = svc.steward.generate(
+                date.fromisoformat(argv[1]),
+                " ".join(argv[2:]),
+                today=today,
+            )
+        except (ValueError, StewardError) as exc:
+            print(f"generation refused: {exc}")
+            return 1
+        except AccessDeniedError as exc:
+            print(f"generation denied: {exc}")
+            return 1
+        print(
+            f"{worklist.worklist_id}: uncoded wordings as of"
+            f" {worklist.as_of}, struck by {worklist.generated_by}"
+            f" against dictionary {worklist.base_dictionary_version}"
+            f" — verified: {worklist.verified},"
+            f" {worklist.totals['distinct_wordings']['value']} wording(s),"
+            f" {worklist.totals['uncoded_decisions']['value']} decision(s)"
+            + (
+                f", supersedes {worklist.supersedes}"
+                if worklist.supersedes
+                else ""
+            )
+        )
+        for row in worklist.rows:
+            products = ", ".join(
+                f"{p.product_name} x{p.reports}" for p in row.products
+            )
+            print(
+                f"  {row.subject_kind} {row.reported_wording!r}"
+                f" [{row.reason}] — {row.reports} report(s),"
+                f" first {row.first_seen}, last {row.last_seen}"
+                + (f" — {products}" if products else "")
+                + f" — {row.dictionary_state}"
+            )
+        for problem in worklist.verification_problems:
+            print(f"  - {problem}")
+        return 0
+    if cmd == "steward-worklists":
+        worklists = svc.steward.worklists()
+        if not worklists:
+            print("steward worklists: none")
+        for worklist in worklists:
+            print(
+                f"{worklist.worklist_id}: as of {worklist.as_of} by"
+                f" {worklist.generated_by} — verified:"
+                f" {worklist.verified},"
+                f" {worklist.totals['distinct_wordings']['value']} wording(s)"
+            )
+        return 0
+    if cmd == "steward-worklist" and len(argv) == 2:
+        worklist = svc.steward.get_worklist(argv[1])
+        if worklist is None:
+            print(f"no such worklist: {argv[1]}")
+            return 1
+        print(json.dumps(worklist.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "steward-verify" and len(argv) == 2:
+        worklist = svc.steward.get_worklist(argv[1])
+        if worklist is None:
+            print(f"no such worklist: {argv[1]}")
+            return 1
+        problems = svc.steward.verify(worklist)
+        if problems:
+            print(f"{worklist.worklist_id}: DOES NOT RE-PERFORM")
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        print(f"{worklist.worklist_id}: re-performs exactly")
+        return 0
+    if cmd == "steward-propose" and len(argv) == 4:
+        from pv_cases.access import AccessDeniedError
+        from pv_cases.steward import StewardError
+
+        try:
+            payload = json.loads(argv[3])
+            candidate = svc.steward.propose(
+                argv[1],
+                payload["reported_wording"],
+                payload["subject_kind"],
+                argv[2],
+                preferred_term=payload.get("preferred_term"),
+                soc=payload.get("soc"),
+                product_code=payload.get("product_code"),
+                synonyms=payload.get("synonyms") or [],
+                note=payload.get("note") or "",
+                today=today,
+            )
+        except (ValueError, StewardError) as exc:
+            print(f"proposal refused: {exc}")
+            return 1
+        except AccessDeniedError as exc:
+            print(f"proposal denied: {exc}")
+            return 1
+        print(
+            f"{candidate.candidate_id}: {candidate.subject_kind}"
+            f" {candidate.reported_wording!r} proposed by"
+            f" {candidate.proposed_by} against {candidate.worklist_id}"
+            f" (dictionary {candidate.dictionary_base_version}) —"
+            f" state: {svc.steward.candidate_state(candidate.candidate_id)}"
+        )
+        return 0
+    if cmd == "steward-candidates":
+        candidates = svc.steward.candidates()
+        if not candidates:
+            print("steward candidates: none")
+        for candidate in candidates:
+            print(
+                f"{candidate.candidate_id}: {candidate.subject_kind}"
+                f" {candidate.reported_wording!r} by"
+                f" {candidate.proposed_by} — state:"
+                f" {svc.steward.candidate_state(candidate.candidate_id)}"
+            )
+        return 0
+    if cmd == "steward-candidate" and len(argv) == 2:
+        candidate = svc.steward.get_candidate(argv[1])
+        if candidate is None:
+            print(f"no such candidate: {argv[1]}")
+            return 1
+        view = candidate.model_dump(mode="json")
+        view["state"] = svc.steward.candidate_state(candidate.candidate_id)
+        record = svc.steward.decision_for(candidate.candidate_id)
+        view["decision"] = (
+            record.model_dump(mode="json") if record is not None else None
+        )
+        print(json.dumps(view, indent=2))
+        return 0
+    if cmd == "steward-decide" and len(argv) >= 4:
+        from pv_cases.access import AccessDeniedError
+        from pv_cases.steward import StewardError
+
+        try:
+            record = svc.steward.decide(
+                argv[1], argv[2], " ".join(argv[3:]), today=today
+            )
+        except (ValueError, StewardError) as exc:
+            print(f"decision refused: {exc}")
+            return 1
+        except AccessDeniedError as exc:
+            print(f"decision denied: {exc}")
+            return 1
+        print(
+            f"{record.decision_id}: candidate {record.candidate_id}"
+            f" {record.decision}ed by {record.decided_by}"
+            + (
+                f" — dictionary {record.minted_dictionary_version} minted"
+                if record.minted_dictionary_version
+                else ""
+            )
+        )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
         from pv_cases.models import DictionaryEntry, ProductDictionaryEntry
