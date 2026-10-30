@@ -365,6 +365,57 @@ def run_core_walk(svc: Services) -> dict:
         for name, section in console["sections"].items()
     }
 
+    # Round 18: draft-vs-final measurement. The literature
+    # case is dual-reviewed over its freed summary and
+    # measured — its held first draft differs from the
+    # approved final, so the diff is a changed one. The
+    # main case is measured over its sealed record: the
+    # measurement is an oversight artefact struck over the
+    # record, writing nothing to the case, and its single
+    # assembly was approved verbatim.
+    svc.review.record_review(
+        "CASE-RPT-2026-9001", "Dr A. Rao", "medical_reviewer",
+        "accept", "", WALK_DAY,
+    )
+    svc.review.record_review(
+        "CASE-RPT-2026-9001",
+        "Dr B. Lindqvist",
+        "safety_reviewer",
+        "accept_with_comment",
+        "Held text released and read as data before review.",
+        WALK_DAY,
+    )
+    sheet["draft_final"] = {}
+    for case_id in (MAIN_CASE, "CASE-RPT-2026-9001"):
+        struck = svc.draft_final.measure(
+            case_id, "Dr S. Okafor", today=AS_OF
+        )
+        stored = svc.store.get_draft_final_measurement(
+            struck.measurement_id
+        )
+        sheet["draft_final"][case_id] = {
+            "measurement_id": stored.measurement_id,
+            "draft_summary_id": stored.draft_summary_id,
+            "final_summary_id": stored.final_summary_id,
+            "assemblies": stored.assemblies,
+            "distinct_drafts": stored.distinct_drafts,
+            "draft_statements": stored.draft_statements,
+            "final_statements": stored.final_statements,
+            "unchanged": stored.unchanged,
+            "citation_changed": stored.citation_changed,
+            "added": stored.added,
+            "dropped": stored.dropped,
+            "verbatim": stored.verbatim,
+            "changes": [
+                {"kind": c.kind, "statement_hash": c.statement_hash}
+                for c in stored.changes
+            ],
+            "verified": stored.verified,
+            "verification_problems": stored.verification_problems,
+            "supersedes": stored.supersedes,
+        }
+    sheet["draft_final_rollup"] = svc.draft_final.rollup()
+
     # The denial log the whole walk wrote, in append order.
     sheet["access_denials"] = [
         {

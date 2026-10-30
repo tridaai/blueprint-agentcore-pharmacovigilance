@@ -869,6 +869,60 @@ def run_demo(out=print) -> Services:
         f" {scientist['sections']['denials']} — invisible,"
         " with no count to leak"
     )
+
+    out("-" * 62)
+    out("Round 18 — draft vs final: what the review actually changed.")
+    svc.review.record_review(
+        "CASE-RPT-2026-9001",
+        "Dr A. Rao",
+        "medical_reviewer",
+        "accept",
+        "",
+        _date(2026, 11, 22),
+    )
+    svc.review.record_review(
+        "CASE-RPT-2026-9001",
+        "Dr B. Lindqvist",
+        "safety_reviewer",
+        "accept_with_comment",
+        "Held text released and read as data before review.",
+        _date(2026, 11, 22),
+    )
+    main_m = svc.draft_final.measure(
+        "CASE-RPT-2026-0001", "Dr S. Okafor", today=_date(2026, 11, 22)
+    )
+    out(
+        "  the main case, measured over its sealed record:"
+        f" one assembly, approved verbatim —"
+        f" {main_m.unchanged} of {main_m.draft_statements}"
+        " statements stand exactly as the agent drafted"
+        f" them (verified: {main_m.verified})"
+    )
+    lit_m = svc.draft_final.measure(
+        "CASE-RPT-2026-9001", "Dr S. Okafor", today=_date(2026, 11, 22)
+    )
+    out(
+        "  the literature case: its first draft was written"
+        " while the planted instruction stood held, so the"
+        f" approved final differs — {lit_m.unchanged}"
+        f" unchanged, {lit_m.citation_changed}"
+        f" citation-changed, {lit_m.added} added,"
+        f" {lit_m.dropped} dropped across"
+        f" {lit_m.assemblies} assemblies; the changed"
+        " statements are named by content hash, never by"
+        f" their text (verified: {lit_m.verified})"
+    )
+    rollup = svc.draft_final.rollup()
+    rate = rollup["verbatim_rate"]
+    out(
+        "  the book's roll-up: "
+        f"{rollup['verbatim_approvals']} of"
+        f" {rollup['measured_cases']} measured cases were"
+        f" approved verbatim — rate {rate['value']} with"
+        " its denominator on the figure. A measurement,"
+        " not an accusation: on a stable case the first"
+        " draft should stand"
+    )
     return svc
 
 

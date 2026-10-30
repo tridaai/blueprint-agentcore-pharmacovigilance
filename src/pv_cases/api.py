@@ -33,6 +33,7 @@ from pv_cases.access import (
     SURFACE_GATEWAY,
     SURFACE_HISTORY,
     SURFACE_MEMORY,
+    SURFACE_DRAFT_FINAL,
     SURFACE_MODEL_LEDGER,
     SURFACE_OVERSIGHT,
     SURFACE_CONSOLE,
@@ -1579,6 +1580,108 @@ def case_model_ledger_verify(case_id: str, request: Request) -> dict:
         "verified": not problems,
         "problems": problems,
     }
+
+
+# ---------------------------------------------------------------------
+# Round 18: draft-vs-final review measurement — the pack, the
+# strike as a named act, the case's standing measurement, its
+# re-performance, and the book's roll-up fold.
+# ---------------------------------------------------------------------
+
+
+class DraftFinalMeasureRequest(BaseModel):
+    measured_by: str
+
+
+@app.get("/draft-final/pack")
+def draft_final_pack(request: Request) -> dict:
+    """The versioned draft-final pack: which summaries are
+    the draft and the final, what a statement is, how
+    statements pair across the two, and what verbatim
+    means."""
+    _require_surface(request, SURFACE_DRAFT_FINAL)
+    from pv_cases.draft_final import load_draft_final_pack
+
+    return load_draft_final_pack().model_dump(mode="json")
+
+
+@app.post("/cases/{case_id}/draft-final/measure")
+def draft_final_measure(
+    case_id: str, body: DraftFinalMeasureRequest, request: Request
+) -> dict:
+    """Strike a case's draft-vs-final measurement as a named
+    act. The service runs the access judge when the call
+    carries a principal — the safety scientist measures,
+    bound to the named measurer; the refusal is recorded
+    in the denial log and answered 403 by name. A case
+    whose review has not completed, or whose review bound
+    no summary, is refused 422 naming the absence."""
+    from pv_cases.draft_final import DraftFinalError
+
+    principal = _principal_for(request, SURFACE_DRAFT_FINAL, case_id)
+    try:
+        measurement = svc().draft_final.measure(
+            case_id,
+            body.measured_by,
+            principal=principal,
+            today=date.today(),
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(403, str(exc))
+    except DraftFinalError as exc:
+        raise HTTPException(422, str(exc))
+    return measurement.model_dump(mode="json")
+
+
+@app.get("/cases/{case_id}/draft-final")
+def case_draft_final(case_id: str, request: Request) -> dict:
+    """One case's standing draft-vs-final measurement. A
+    principal whose role has no case scope is answered
+    exactly as for a non-existent case (existence hiding),
+    and the refusal is on the denial log before the
+    answer. A case with no measurement struck is a plain
+    404 naming the absence."""
+    _case_read(request, case_id, SURFACE_DRAFT_FINAL)
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    measurement = svc().draft_final.get(case_id)
+    if measurement is None:
+        raise HTTPException(
+            404, f"no draft-final measurement for case: {case_id}"
+        )
+    return measurement.model_dump(mode="json")
+
+
+@app.get("/cases/{case_id}/draft-final/verify")
+def case_draft_final_verify(case_id: str, request: Request) -> dict:
+    """Re-perform one case's standing measurement: the
+    selection and the diff re-derived from the raw store
+    by the second path. Problems name the figure that
+    does not recompute."""
+    _case_read(request, case_id, SURFACE_DRAFT_FINAL)
+    if svc().store.get_case(case_id) is None:
+        raise HTTPException(404, f"no such case: {case_id}")
+    measurement = svc().draft_final.get(case_id)
+    if measurement is None:
+        raise HTTPException(
+            404, f"no draft-final measurement for case: {case_id}"
+        )
+    problems = svc().draft_final.verify(measurement)
+    return {
+        "case_id": case_id,
+        "measurement_id": measurement.measurement_id,
+        "verified": not problems,
+        "problems": problems,
+    }
+
+
+@app.get("/draft-final/rollup")
+def draft_final_rollup(request: Request) -> dict:
+    """The book's verbatim-approval fold over standing
+    measurements: measured cases, verbatim approvals, and
+    the rate with its denominator on the figure."""
+    _require_surface(request, SURFACE_DRAFT_FINAL)
+    return svc().draft_final.rollup()
 
 
 # ---------------------------------------------------------------------

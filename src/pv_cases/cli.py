@@ -12,7 +12,9 @@ model-ledger-verify|signals-pack|signals-generate|
 signals-tables|signals-table|signals-verify|steward-pack|
 steward-generate|steward-worklists|steward-worklist|
 steward-verify|steward-propose|steward-candidates|
-steward-candidate|steward-decide|console-data``
+steward-candidate|steward-decide|console-data|
+draft-final-pack|draft-final-measure|draft-final|
+draft-final-verify|draft-final-rollup``
 against the configured store."""
 
 from __future__ import annotations
@@ -68,7 +70,10 @@ USAGE = (
     "steward-propose <worklist_id> <proposed_by> <proposal-json>|"
     "steward-candidates|steward-candidate <candidate_id>|"
     "steward-decide <candidate_id> <confirm|reject> <decided_by...>|"
-    "console-data [as-of]"
+    "console-data [as-of]|draft-final-pack|"
+    "draft-final-measure <case_id> <measured_by...>|"
+    "draft-final <case_id>|draft-final-verify <case_id>|"
+    "draft-final-rollup"
 )
 
 
@@ -950,6 +955,92 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == "console-data" and len(argv) <= 2:
         as_of = date.fromisoformat(argv[1]) if len(argv) == 2 else today
         print(json.dumps(svc.console.data(as_of), indent=2))
+        return 0
+    if cmd == "draft-final-pack":
+        from pv_cases.draft_final import load_draft_final_pack
+
+        print(
+            json.dumps(
+                load_draft_final_pack().model_dump(mode="json"), indent=2
+            )
+        )
+        return 0
+    if cmd == "draft-final-measure" and len(argv) >= 3:
+        from pv_cases.access import AccessDeniedError
+        from pv_cases.draft_final import DraftFinalError
+
+        try:
+            measurement = svc.draft_final.measure(
+                argv[1], " ".join(argv[2:]), today=today
+            )
+        except DraftFinalError as exc:
+            print(f"measurement refused: {exc}")
+            return 1
+        except AccessDeniedError as exc:
+            print(f"measurement denied: {exc}")
+            return 1
+        print(
+            f"{measurement.measurement_id}: {measurement.case_id} —"
+            f" draft {measurement.draft_summary_id}"
+            f" ({measurement.draft_statements} statements) ->"
+            f" final {measurement.final_summary_id}"
+            f" ({measurement.final_statements} statements);"
+            f" unchanged {measurement.unchanged},"
+            f" citation-changed {measurement.citation_changed},"
+            f" added {measurement.added},"
+            f" dropped {measurement.dropped};"
+            f" verbatim: {measurement.verbatim},"
+            f" verified: {measurement.verified}"
+            + (
+                f", supersedes {measurement.supersedes}"
+                if measurement.supersedes
+                else ""
+            )
+        )
+        for problem in measurement.verification_problems:
+            print(f"  - {problem}")
+        return 0
+    if cmd == "draft-final" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        measurement = svc.draft_final.get(argv[1])
+        if measurement is None:
+            print(f"no draft-final measurement for case: {argv[1]}")
+            return 1
+        print(json.dumps(measurement.model_dump(mode="json"), indent=2))
+        return 0
+    if cmd == "draft-final-verify" and len(argv) == 2:
+        if svc.store.get_case(argv[1]) is None:
+            print(f"no such case: {argv[1]}")
+            return 1
+        measurement = svc.draft_final.get(argv[1])
+        if measurement is None:
+            print(f"no draft-final measurement for case: {argv[1]}")
+            return 1
+        problems = svc.draft_final.verify(measurement)
+        if problems:
+            print(
+                f"{measurement.measurement_id} DOES NOT RE-PERFORM:"
+            )
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        print(
+            f"{measurement.measurement_id} re-performs clean:"
+            " every figure recomputes from the raw record"
+        )
+        return 0
+    if cmd == "draft-final-rollup":
+        rollup = svc.draft_final.rollup()
+        rate = rollup["verbatim_rate"]
+        print(
+            f"measured cases: {rollup['measured_cases']} —"
+            f" verbatim approvals {rollup['verbatim_approvals']},"
+            f" changed approvals {rollup['changed_approvals']};"
+            f" verbatim rate {rate['value']}"
+            f" ({rate['numerator']}/{rate['denominator']})"
+        )
         return 0
     if cmd == "dictionary-add" and len(argv) == 4:
         from pv_cases.models import DictionaryEntry, ProductDictionaryEntry
