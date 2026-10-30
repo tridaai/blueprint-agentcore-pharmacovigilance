@@ -45,6 +45,13 @@ budgets before the port is touched, judges PHI minimisation
 at the door, and holds quarantined text on the gateway path
 itself — and the demo closes by folding the main case's
 ledger and re-performing the whole book's.
+Round 13 adds signal counts: the coded book is counted
+against itself — every product–event pair's 2x2 stated with
+its proportional reporting ratio and chi-square, judged
+against the pack's stated criteria — first over the book as
+it stands, then again after a small planted cluster of one
+cream's blistering rash lands in the same window and the
+table is re-struck, superseding the first.
 Run with ``make demo``.
 """
 
@@ -565,6 +572,96 @@ def run_demo(out=print) -> Services:
         f"  the whole book's ledger re-performs clean:"
         f" {not problems} ({svc.store.count_model_calls()}"
         " record(s) over the demo book)"
+    )
+
+    out("-" * 62)
+    out("Round 13 — signal counts: the book, counted against itself.")
+    table = svc.signals.generate(
+        _date(2026, 10, 1),
+        _date(2026, 10, 31),
+        _date(2026, 11, 20),
+        "Dr S. Okafor",
+        today=_date(2026, 11, 20),
+    )
+    totals = table.totals
+    out(
+        f"  {table.table_id}: October 2026 as of 2026-11-20 —"
+        f" {totals['attributable_reports']['value']} attributable"
+        f" reports over {totals['distinct_products']['value']}"
+        f" products, {totals['pairs_counted']['value']} pairs,"
+        f" {totals['pairs_flagged']['value']} flagged"
+        f" (verified: {table.verified})"
+    )
+    out(
+        "  a planted cluster lands: four more Dermaclear reports"
+        " of the same blistering rash in the same window, and"
+        " one on Cardivane — the single report elsewhere is"
+        " what makes the pair's ratio computable at all"
+    )
+    for n, (code, name, initials, age, sex, received, onset) in enumerate(
+        [
+            ("NBT-317", "Dermaclear", "J.M.", 54, "F",
+             date(2026, 10, 6), date(2026, 10, 4)),
+            ("NBT-317", "Dermaclear", "K.T.", 67, "M",
+             date(2026, 10, 8), date(2026, 10, 5)),
+            ("NBT-317", "Dermaclear", "L.A.", 49, "F",
+             date(2026, 10, 10), date(2026, 10, 8)),
+            ("NBT-317", "Dermaclear", "N.P.", 73, "F",
+             date(2026, 10, 11), date(2026, 10, 9)),
+            ("NBT-101", "Cardivane", "O.D.", 61, "M",
+             date(2026, 10, 11), date(2026, 10, 7)),
+        ]
+    ):
+        svc.intake.ingest(
+            IntakeReport(
+                report_id=f"RPT-2026-91{n + 1:02d}",
+                source=ReportSource.CLINICIAN,
+                received_on=received,
+                patient=Patient(initials=initials, age=age, sex=sex),
+                reporter=Reporter(
+                    name="Dr Cluster Reporter",
+                    qualification="physician",
+                    email="cluster@example-clinic.org",
+                    country="GB",
+                ),
+                suspect_product_code=code,
+                suspect_product_name=name,
+                events=[
+                    AdverseEvent(
+                        verbatim_term="Blistering rash on hands",
+                        onset_date=onset,
+                        outcome="recovering",
+                    )
+                ],
+                narrative="Clinician report via the safety mailbox.",
+            ),
+            DEMO_DAY,
+        )
+    moved = svc.signals.generate(
+        _date(2026, 10, 1),
+        _date(2026, 10, 31),
+        _date(2026, 11, 20),
+        "Dr S. Okafor",
+        today=_date(2026, 11, 20),
+    )
+    out(
+        f"  the record moved, so a new table stands:"
+        f" {moved.table_id} supersedes {table.table_id}"
+        f" — the old table is never edited"
+    )
+    for pair in moved.pairs:
+        if pair.meets_criteria:
+            out(
+                f"  flagged: {pair.product_name} +"
+                f" {pair.preferred_term} — a={pair.a} b={pair.b}"
+                f" c={pair.c} d={pair.d}, PRR {pair.prr},"
+                f" chi-square {pair.chi_square} — a prompt for"
+                " human signal evaluation, not a finding"
+            )
+    out(
+        f"  verified by independent re-performance:"
+        f" {moved.verified} — and the table states what it"
+        f" is: {moved.notice.split(':')[0].lower()}"
     )
     return svc
 

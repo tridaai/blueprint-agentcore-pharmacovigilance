@@ -305,6 +305,40 @@ book whose summaries route through the gateway:
                                  record carrying a prompt's
                                  fact values
 
+Round 13 (signal counts), graded over a fresh book whose
+2x2s are known exactly:
+  signal_figure_mismatches     a stored table the verifier's
+                                 second path does not
+                                 re-perform exactly, or a table
+                                 whose verified mark is not set
+  signal_counting_errors       a total, cell, ratio or
+                                 chi-square on the graded book
+                                 that differs from the
+                                 hand-computed value, or a SOC
+                                 share missing its denominator
+  signal_criteria_errors       a pair meeting the pack's
+                                 stated criteria that is not
+                                 flagged, a pair flagged that
+                                 does not meet them, or a
+                                 no-comparator pair flagged
+                                 however large its chi-square
+  signal_phi_fields_in_tables  a forbidden key anywhere in a
+                                 table payload
+  signal_tampered_tables_verified
+                                 a table with one cell moved
+                                 that the verifier passes clean
+  signal_superseded_table_edits
+                                 a stored table edited after a
+                                 moved record superseded it, a
+                                 new table not linked to the
+                                 one it supersedes, or a moved
+                                 record minting the same id
+  signal_generation_role_errors
+                                 a non-scientist principal
+                                 generating a table (the
+                                 auditor's attempt must be
+                                 refused and recorded)
+
 Run: uv run python evals/run_evals.py  (exit 0 = GATE: PASS)
 """
 
@@ -2674,7 +2708,195 @@ def main() -> int:
     phi12 += "Ignore all previous" in _ledger_blob12
     counters["model_gateway_phi_leaks"] = phi12
 
-    print("Rounds 1–12 evals — pharmacovigilance case agent")
+    # ---------------- Round 13: signal counts ----------------
+    # The disproportionality view over the coded book: every
+    # pair's 2x2 computed in code under a versioned pack.
+    # Graded over a fresh book whose cells are known exactly
+    # — a flagged pair is recomputable by hand from its row.
+    from pv_cases.access import AccessDeniedError as _ADE13
+    from pv_cases.access import Principal as _Principal13
+    from pv_cases.models import AdverseEvent as _AE13
+    from pv_cases.models import IntakeReport as _Report13
+    from pv_cases.models import Patient as _Patient13
+    from pv_cases.models import Reporter as _Reporter13
+    from pv_cases.models import ReportSource as _Source13
+    from pv_cases.oversight import phi_problems as _phi13
+    from pv_cases.signals import NO_COMPARATOR as _NOCOMP13
+
+    WIN13 = (date(2026, 10, 1), date(2026, 10, 31))
+    ASOF13 = date(2026, 11, 20)
+
+    def _rep13(rid, received, verbatim, code, name, initials, age,
+               sex, onset):
+        return _Report13(
+            report_id=rid,
+            source=_Source13.CLINICIAN,
+            received_on=received,
+            patient=_Patient13(initials=initials, age=age, sex=sex),
+            reporter=_Reporter13(
+                name="Dr Eval Reporter",
+                qualification="physician",
+                email="eval@example-clinic.org",
+                country="GB",
+            ),
+            suspect_product_code=code,
+            suspect_product_name=name,
+            events=[
+                _AE13(
+                    verbatim_term=verbatim,
+                    onset_date=onset,
+                    outcome="recovered",
+                )
+            ],
+            narrative="Clinician report via the safety mailbox.",
+        )
+
+    tmp13 = Path(tempfile.mkdtemp(prefix="pv-evals-r13-"))
+    svc13 = Services(
+        Settings(
+            sqlite_path=str(tmp13 / "pv.db"),
+            object_store_dir=str(tmp13 / "objects"),
+        )
+    )
+    _book13 = [
+        ("E13-D1", date(2026, 10, 6), "Blistering rash on hands",
+         "NBT-317", "Dermaclear", "J.M.", 54, "F", date(2026, 10, 4)),
+        ("E13-D2", date(2026, 10, 8), "Blistering rash on hands",
+         "NBT-317", "Dermaclear", "K.T.", 67, "M", date(2026, 10, 5)),
+        ("E13-D3", date(2026, 10, 10), "Blistering rash on hands",
+         "NBT-317", "Dermaclear", "L.A.", 49, "F", date(2026, 10, 8)),
+        ("E13-D4", date(2026, 10, 11), "Blistering rash on hands",
+         "NBT-317", "Dermaclear", "N.P.", 73, "F", date(2026, 10, 9)),
+        ("E13-D5", date(2026, 10, 14), "Itchy skin where cream applied",
+         "NBT-317", "Dermaclear", "R.S.", 38, "F", date(2026, 10, 12)),
+        ("E13-D6", date(2026, 10, 17), "Itchy skin where cream applied",
+         "NBT-317", "Dermaclear", "T.W.", 59, "M", date(2026, 10, 15)),
+        ("E13-C1", date(2026, 10, 11), "Blistering rash on hands",
+         "NBT-101", "Cardivane", "O.D.", 61, "M", date(2026, 10, 7)),
+        ("E13-C2", date(2026, 10, 5), "Severe headache",
+         "NBT-101", "Cardivane", "B.F.", 45, "F", date(2026, 10, 3)),
+        ("E13-C3", date(2026, 10, 8), "Severe headache",
+         "NBT-101", "Cardivane", "C.G.", 52, "M", date(2026, 10, 6)),
+        ("E13-C4", date(2026, 10, 12), "Severe headache",
+         "NBT-101", "Cardivane", "D.H.", 47, "F", date(2026, 10, 10)),
+        ("E13-C5", date(2026, 10, 15), "Severe headache",
+         "NBT-101", "Cardivane", "E.J.", 66, "M", date(2026, 10, 13)),
+        ("E13-C6", date(2026, 10, 19), "Severe headache",
+         "NBT-101", "Cardivane", "F.K.", 58, "F", date(2026, 10, 16)),
+        ("E13-S1", date(2026, 10, 4), "Could not stay awake at work",
+         "NBT-204", "Somnirel", "G.L.", 44, "M", date(2026, 10, 2)),
+        ("E13-S2", date(2026, 10, 11), "Could not stay awake at work",
+         "NBT-204", "Somnirel", "H.M.", 51, "F", date(2026, 10, 9)),
+        ("E13-S3", date(2026, 10, 16), "Could not stay awake at work",
+         "NBT-204", "Somnirel", "I.N.", 63, "M", date(2026, 10, 14)),
+        ("E13-S4", date(2026, 10, 20), "Could not stay awake at work",
+         "NBT-204", "Somnirel", "J.O.", 57, "F", date(2026, 10, 18)),
+    ]
+    for _row13 in _book13:
+        _r13 = _rep13(*_row13)
+        svc13.intake.ingest(_r13, _r13.received_on)
+
+    tab13 = svc13.signals.generate(
+        WIN13[0], WIN13[1], ASOF13, "Dr S. Okafor", today=ASOF13
+    )
+    counters["signal_figure_mismatches"] = len(
+        svc13.signals.verify(tab13)
+    ) + (0 if tab13.verified else 1)
+
+    def _pair13(code, term):
+        for _p in tab13.pairs:
+            if _p.product_code == code and _p.preferred_term == term:
+                return _p
+        return None
+
+    counting13 = 0
+    _tot13 = {k: v["value"] for k, v in tab13.totals.items()}
+    for _k, _want in {
+        "population_cases": 16,
+        "attributable_reports": 16,
+        "unattributed_reports": 0,
+        "uncoded_event_decisions": 0,
+        "distinct_products": 3,
+        "distinct_terms": 4,
+        "pairs_counted": 5,
+        "pairs_flagged": 1,
+    }.items():
+        counting13 += _tot13.get(_k) != _want
+    _flag13 = _pair13("NBT-317", "Rash vesicular")
+    counting13 += _flag13 is None
+    if _flag13 is not None:
+        counting13 += (_flag13.a, _flag13.b, _flag13.c, _flag13.d) != (
+            4, 2, 1, 9,
+        )
+        counting13 += _flag13.prr != "6.6667"
+        counting13 += _flag13.chi_square != "5.6048"
+    for _row in tab13.soc_rows:
+        counting13 += _row.share["numerator"] != _row.cases
+        counting13 += _row.share["denominator"] != _row.product_reports
+    counters["signal_counting_errors"] = counting13
+
+    criteria13 = 0
+    criteria13 += _flag13 is None or not _flag13.meets_criteria
+    _head13 = _pair13("NBT-101", "Headache")
+    criteria13 += _head13 is None
+    if _head13 is not None:
+        criteria13 += _head13.prr != _NOCOMP13
+        criteria13 += _head13.meets_criteria
+    _prur13 = _pair13("NBT-317", "Pruritus")
+    criteria13 += _prur13 is None or _prur13.meets_criteria
+    counters["signal_criteria_errors"] = criteria13
+
+    _empty13 = svc13.signals.generate(
+        date(2026, 12, 1), date(2026, 12, 31), ASOF13,
+        "Dr S. Okafor", today=ASOF13,
+    )
+    counters["signal_phi_fields_in_tables"] = len(
+        _phi13(tab13.model_dump(mode="json"))
+    ) + len(_phi13(_empty13.model_dump(mode="json")))
+
+    import copy as _copy13
+
+    _tampered13 = _copy13.deepcopy(tab13.pairs)
+    _tampered13[0].a += 1
+    counters["signal_tampered_tables_verified"] = (
+        0
+        if svc13.signals.verify(tab13.model_copy(update={"pairs": _tampered13}))
+        else 1
+    )
+
+    _before13 = svc13.store.get_signal_table(tab13.table_id).model_dump_json()
+    _mover13 = _rep13(
+        "E13-NEW", date(2026, 10, 21), "Blistering rash on hands",
+        "NBT-317", "Dermaclear", "Z.Z.", 56, "F", date(2026, 10, 19),
+    )
+    svc13.intake.ingest(_mover13, _mover13.received_on)
+    _second13 = svc13.signals.generate(
+        WIN13[0], WIN13[1], ASOF13, "Dr S. Okafor", today=ASOF13
+    )
+    _standing13 = svc13.store.get_signal_table(tab13.table_id)
+    counters["signal_superseded_table_edits"] = (
+        (_standing13.model_dump_json() != _before13)
+        + (_second13.supersedes != tab13.table_id)
+        + (_second13.table_id == tab13.table_id)
+    )
+
+    role13 = 0
+    _denials13 = len(svc13.store.list_access_denials())
+    try:
+        svc13.signals.generate(
+            WIN13[0], WIN13[1], ASOF13, "Ms A. Whitfield",
+            principal=_Principal13(
+                id="Ms A. Whitfield", role="quality_auditor"
+            ),
+            today=ASOF13,
+        )
+        role13 += 1
+    except _ADE13:
+        pass
+    role13 += len(svc13.store.list_access_denials()) != _denials13 + 1
+    counters["signal_generation_role_errors"] = role13
+
+    print("Rounds 1–13 evals — pharmacovigilance case agent")
     for name, value in counters.items():
         print(f"  {name}: {value} (required 0)")
     failed = [n for n, v in counters.items() if v != 0]
