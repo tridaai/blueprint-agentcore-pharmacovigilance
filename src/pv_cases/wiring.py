@@ -31,6 +31,7 @@ from pv_cases.review import ReviewService
 from pv_cases.sealing import SealingService
 from pv_cases.services import IntakeService
 from pv_cases.signals import SignalService
+from pv_cases.steward import StewardService
 from pv_cases.store import SqlCaseStore
 
 
@@ -195,6 +196,15 @@ class Services:
         # same access control as every other named act.
         self.signals = SignalService(self.store)
         self.signals.access = self.access
+        # Round 14: dictionary stewardship — the aggregate
+        # worklist over the book's uncoded wordings and the
+        # dual-controlled candidate route into the dictionary.
+        # It reads the coding layer's dictionary and enacts
+        # confirmed mappings through the coding layer's own
+        # addition, and its acts are judged by the same access
+        # control as every other named act.
+        self.steward = StewardService(self.store, coding=self.coding)
+        self.steward.access = self.access
         # Round 12: the model gateway's ledger reads are judged
         # by the same access control — one denial log for every
         # refused read, the ledger's included.

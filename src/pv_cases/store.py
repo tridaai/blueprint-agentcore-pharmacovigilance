@@ -149,6 +149,19 @@ class CaseStore(Protocol):
     def add_signal_table(self, table) -> None: ...
     def get_signal_table(self, table_id: str): ...
     def list_signal_tables(self) -> list: ...
+    # Round 14: dictionary stewardship. Insert-only — a
+    # worklist over a moved record is a new worklist
+    # superseding the old one by link, a candidate stands as
+    # proposed, and its decision is a separate artefact (see
+    # pv_cases.steward).
+    def add_steward_worklist(self, worklist) -> None: ...
+    def get_steward_worklist(self, worklist_id: str): ...
+    def list_steward_worklists(self) -> list: ...
+    def add_steward_candidate(self, candidate) -> None: ...
+    def get_steward_candidate(self, candidate_id: str): ...
+    def list_steward_candidates(self) -> list: ...
+    def add_steward_decision(self, decision) -> None: ...
+    def list_steward_decisions(self, candidate_id: str | None = None) -> list: ...
 
 
 def _case_params(case: Case) -> tuple:
@@ -1005,6 +1018,94 @@ class SqlCaseStore:
         )
         return [SignalTable.model_validate_json(r[0]) for r in rows]
 
+    def add_steward_worklist(self, worklist) -> None:
+        self._run(
+            "INSERT INTO steward_worklists (worklist_id, as_of,"
+            " payload) VALUES (?,?,?)",
+            (
+                worklist.worklist_id,
+                worklist.as_of.isoformat(),
+                worklist.model_dump_json(),
+            ),
+        )
+
+    def get_steward_worklist(self, worklist_id: str):
+        from pv_cases.steward import StewardWorklist
+
+        rows = self._run(
+            "SELECT payload FROM steward_worklists WHERE worklist_id = ?",
+            (worklist_id,),
+            fetch="all",
+        )
+        return StewardWorklist.model_validate_json(rows[0][0]) if rows else None
+
+    def list_steward_worklists(self) -> list:
+        from pv_cases.steward import StewardWorklist
+
+        rows = self._run(
+            "SELECT payload FROM steward_worklists ORDER BY worklist_id",
+            fetch="all",
+        )
+        return [StewardWorklist.model_validate_json(r[0]) for r in rows]
+
+    def add_steward_candidate(self, candidate) -> None:
+        self._run(
+            "INSERT INTO steward_candidates (candidate_id,"
+            " worklist_id, payload) VALUES (?,?,?)",
+            (
+                candidate.candidate_id,
+                candidate.worklist_id,
+                candidate.model_dump_json(),
+            ),
+        )
+
+    def get_steward_candidate(self, candidate_id: str):
+        from pv_cases.steward import StewardCandidate
+
+        rows = self._run(
+            "SELECT payload FROM steward_candidates WHERE candidate_id = ?",
+            (candidate_id,),
+            fetch="all",
+        )
+        return StewardCandidate.model_validate_json(rows[0][0]) if rows else None
+
+    def list_steward_candidates(self) -> list:
+        from pv_cases.steward import StewardCandidate
+
+        rows = self._run(
+            "SELECT payload FROM steward_candidates ORDER BY candidate_id",
+            fetch="all",
+        )
+        return [StewardCandidate.model_validate_json(r[0]) for r in rows]
+
+    def add_steward_decision(self, decision) -> None:
+        self._run(
+            "INSERT INTO steward_decisions (decision_id,"
+            " candidate_id, payload) VALUES (?,?,?)",
+            (
+                decision.decision_id,
+                decision.candidate_id,
+                decision.model_dump_json(),
+            ),
+        )
+
+    def list_steward_decisions(self, candidate_id: str | None = None) -> list:
+        from pv_cases.steward import StewardDecision
+
+        if candidate_id is None:
+            rows = self._run(
+                "SELECT payload FROM steward_decisions ORDER BY decision_id",
+                fetch="all",
+            )
+        else:
+            rows = self._run(
+                "SELECT payload FROM steward_decisions"
+                " WHERE candidate_id = ? ORDER BY decision_id",
+                (candidate_id,),
+                fetch="all",
+            )
+        return [StewardDecision.model_validate_json(r[0]) for r in rows]
+
 
 class InMemoryCaseStore:
     """The eval/test double implementing the same port."""
@@ -1035,6 +1136,9 @@ class InMemoryCaseStore:
         self.safety_reports: dict[str, object] = {}
         self.model_calls: dict[str, object] = {}
         self.signal_tables: dict[str, object] = {}
+        self.steward_worklists: dict[str, object] = {}
+        self.steward_candidates: dict[str, object] = {}
+        self.steward_decisions: list = []
 
     def add_case(self, case: Case) -> None:
         self.cases[case.case_id] = case
@@ -1306,3 +1410,35 @@ class InMemoryCaseStore:
 
     def list_signal_tables(self) -> list:
         return [self.signal_tables[k] for k in sorted(self.signal_tables)]
+
+    def add_steward_worklist(self, worklist) -> None:
+        self.steward_worklists[worklist.worklist_id] = worklist
+
+    def get_steward_worklist(self, worklist_id: str):
+        return self.steward_worklists.get(worklist_id)
+
+    def list_steward_worklists(self) -> list:
+        return [
+            self.steward_worklists[k] for k in sorted(self.steward_worklists)
+        ]
+
+    def add_steward_candidate(self, candidate) -> None:
+        self.steward_candidates[candidate.candidate_id] = candidate
+
+    def get_steward_candidate(self, candidate_id: str):
+        return self.steward_candidates.get(candidate_id)
+
+    def list_steward_candidates(self) -> list:
+        return [
+            self.steward_candidates[k]
+            for k in sorted(self.steward_candidates)
+        ]
+
+    def add_steward_decision(self, decision) -> None:
+        self.steward_decisions.append(decision)
+
+    def list_steward_decisions(self, candidate_id: str | None = None) -> list:
+        items = self.steward_decisions
+        if candidate_id is not None:
+            items = [d for d in items if d.candidate_id == candidate_id]
+        return sorted(items, key=lambda d: d.decision_id)

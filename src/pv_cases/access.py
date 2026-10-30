@@ -144,6 +144,12 @@ SURFACE_MODEL_LEDGER = "model_ledger"
 # the case-working roles and the auditor read them; intake
 # and case admin do not.
 SURFACE_SIGNAL_COUNTS = "signal_counts"
+# Round 14: dictionary stewardship — the aggregate worklist
+# of uncoded wordings and the dual-controlled candidate
+# mappings worked from it. Reference-data governance, so
+# the case admin reads it alongside the case-working roles
+# and the auditor; intake does not.
+SURFACE_DICTIONARY_STEWARDSHIP = "dictionary_stewardship"
 SURFACES = [
     SURFACE_CASE,
     SURFACE_EVIDENCE,
@@ -164,6 +170,7 @@ SURFACES = [
     SURFACE_OVERSIGHT,
     SURFACE_MODEL_LEDGER,
     SURFACE_SIGNAL_COUNTS,
+    SURFACE_DICTIONARY_STEWARDSHIP,
 ]
 
 # Acts — the named operations the pack gates. These are the
@@ -191,6 +198,17 @@ ACT_GENERATE_OVERSIGHT_REPORT = "generate_oversight_report"
 # safety scientist's, like report generation. The auditor
 # reads tables; it generates none.
 ACT_GENERATE_SIGNAL_COUNTS = "generate_signal_counts"
+# Round 14: dictionary stewardship — striking the worklist,
+# proposing a candidate mapping from it, and deciding a
+# candidate (confirm or reject). The stewardship acts are
+# held by the two roles that already work the dictionary:
+# the safety scientist (who codes) and the case admin (who
+# administers reference data). Dual control is the service's
+# own rule on top: a candidate's decider may not be its
+# proposer, whoever they are.
+ACT_GENERATE_STEWARD_WORKLIST = "generate_steward_worklist"
+ACT_PROPOSE_STEWARD_MAPPING = "propose_steward_mapping"
+ACT_DECIDE_STEWARD_MAPPING = "decide_steward_mapping"
 ACTS = [
     ACT_INTAKE_REPORT,
     ACT_SUBMIT_FOLLOW_UP,
@@ -207,6 +225,9 @@ ACTS = [
     ACT_RECALL_MEMORY,
     ACT_GENERATE_OVERSIGHT_REPORT,
     ACT_GENERATE_SIGNAL_COUNTS,
+    ACT_GENERATE_STEWARD_WORKLIST,
+    ACT_PROPOSE_STEWARD_MAPPING,
+    ACT_DECIDE_STEWARD_MAPPING,
 ]
 
 # Denial reasons — the closed vocabulary of the denial log.
@@ -310,6 +331,7 @@ _CASEWORK_READS = [
     SURFACE_OVERSIGHT,
     SURFACE_MODEL_LEDGER,
     SURFACE_SIGNAL_COUNTS,
+    SURFACE_DICTIONARY_STEWARDSHIP,
 ]
 
 ACCESS_PACK_V1 = AccessPack(
@@ -338,6 +360,9 @@ ACCESS_PACK_V1 = AccessPack(
                 ACT_RECALL_MEMORY,
                 ACT_GENERATE_OVERSIGHT_REPORT,
                 ACT_GENERATE_SIGNAL_COUNTS,
+                ACT_GENERATE_STEWARD_WORKLIST,
+                ACT_PROPOSE_STEWARD_MAPPING,
+                ACT_DECIDE_STEWARD_MAPPING,
             ],
         ),
         RoleGrant(
@@ -378,8 +403,14 @@ ACCESS_PACK_V1 = AccessPack(
                 SURFACE_GATEWAY,
                 SURFACE_DENIAL_LOG,
                 SURFACE_PACKS,
+                SURFACE_DICTIONARY_STEWARDSHIP,
             ],
-            acts=[ACT_PROPOSE_DICTIONARY_ADDITION],
+            acts=[
+                ACT_PROPOSE_DICTIONARY_ADDITION,
+                ACT_GENERATE_STEWARD_WORKLIST,
+                ACT_PROPOSE_STEWARD_MAPPING,
+                ACT_DECIDE_STEWARD_MAPPING,
+            ],
         ),
     ],
     act_requirements={
@@ -402,6 +433,18 @@ ACCESS_PACK_V1 = AccessPack(
         ],
         ACT_GENERATE_OVERSIGHT_REPORT: [ROLE_SAFETY_SCIENTIST],
         ACT_GENERATE_SIGNAL_COUNTS: [ROLE_SAFETY_SCIENTIST],
+        ACT_GENERATE_STEWARD_WORKLIST: [
+            ROLE_SAFETY_SCIENTIST,
+            ROLE_CASE_ADMIN,
+        ],
+        ACT_PROPOSE_STEWARD_MAPPING: [
+            ROLE_SAFETY_SCIENTIST,
+            ROLE_CASE_ADMIN,
+        ],
+        ACT_DECIDE_STEWARD_MAPPING: [
+            ROLE_SAFETY_SCIENTIST,
+            ROLE_CASE_ADMIN,
+        ],
     },
 )
 
@@ -442,6 +485,11 @@ class AccessDenial(BaseModel):
   signal-counts surface and the table-generation act were
   added when the surface itself landed, under this same
   version string, separated by the same fingerprint.
+- **Round 14 joins this pack** on the same terms: the
+  dictionary-stewardship surface and the three stewardship
+  acts were added when the surface itself landed, under
+  this same version string, separated by the same
+  fingerprint.
 """
 
     denial_id: str
