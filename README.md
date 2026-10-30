@@ -1053,6 +1053,70 @@ programme.
   hashes on both dialects). Six new zero-tolerance
   `draft_final_*` counters join the eval gate.
 
+## What Round 19 adds
+
+- **Red Team III** (`tests/test_redteam3.py`, the record
+  in `docs/red-team.md`): the pre-release attack pass, in
+  Rounds 9 and 17's pattern — this time over what was
+  built since the second team went home, above all Round
+  18's draft-vs-final measurement, with fresh angles on
+  the model gateway, signals, stewardship, console and
+  parity surfaces where Round 18 changed what they
+  compose. Ten attacks (RT-42–RT-51): one real defect,
+  eight held, one boundary stated rather than fixed.
+- **The defect (RT-42): a measurement's identity was
+  taken on trust.** The verifier re-performed a
+  measurement's *figures* and nothing else — the pack it
+  named, the id it carried and the supersedes link it
+  asserted were never graded, and standing was a date
+  order over whatever rows the store held. A row written
+  around the service with a flipped verbatim flag and a
+  later date therefore displaced the genuine standing
+  measurement and poisoned the book's roll-up: the
+  oversight figure of Round 18 could be rewritten by
+  anyone who could write the table. Fixed at the root in
+  `draft_final.py`: the verifier now grades the identity
+  claims alongside the figures (the pack must be one the
+  system holds and the one the re-performance runs
+  under; the id must be the content address recomputed
+  over the artefact's own stated fields; the link must
+  name a held measurement of the same case on a chain
+  that reaches a root); the case's eligible artefacts
+  must form the single chain `measure()` builds, so a
+  severed link or a fork is named as a broken chain; and
+  standing requires that single chain over eligible
+  artefacts only — a severed or forked set has no
+  standing measurement, rather than a head picked by
+  date from rows whose order the chain does not state.
+- **What held**: measuring over a record that moved
+  after its review (refused — the gate no longer stands
+  over the current narrative); identical re-assembly
+  after review (a summary's version is its content hash,
+  and both selection paths agree); a third current
+  accept act (the builder's derived view and the
+  verifier's raw walk name the same completing set); the
+  diff's statement identity gamed three ways (citation
+  swaps, duplicates, citation order — one identity in
+  the diff and in the review layer's version hash);
+  existence symmetry on the measure act; the artefact
+  census across a strike; a stale measurement named by
+  re-performance over a moved record; and the parity
+  sheet carrying the new surface's full figures, not
+  just its ids.
+- **The stated boundary (RT-50)**: a stored payload
+  replaced wholesale — fabricated figures under a
+  correctly recomputed content address — is
+  identity-valid by construction; only the figure
+  re-performance names it, which is the defence the
+  system claims (the verifier, the verify endpoint, the
+  standing checks) and the same trust line every
+  artefact in the system stands on. Recorded in
+  `docs/red-team.md` so the boundary is a decision on
+  the page. Three `redteam3_*` counters join the eval
+  gate, and `scripts/check_red_team.py` (`make
+  red-team-check`) stands the identity defences as a
+  check alongside the other standing checks.
+
 ## Quick start
 
 ```bash
@@ -1070,32 +1134,51 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 18 of 20.** Built and gate-green: everything in
-  Rounds 1–17, plus draft-vs-final review measurement —
-  the design brief's eighth law, the last of its ten
-  without machinery. Per case, once the dual-control
-  review completes, an insert-only measurement (`DFM-`,
-  migration 0014) records the distance between the first
-  assembled narrative draft and the summary content the
-  completing accept acts bound: a statement-level diff
-  computed under a versioned pack (2026.10.1) — unchanged,
-  citation-changed, added, dropped, carried as counts and
-  statement hashes, never statement text — the assemblies
-  walked and the distinct drafts among them, and whether
-  the gate approved the draft untouched. The book's
-  verbatim rate folds at read time with its denominator
-  on the figure; measurements over moved records
-  supersede by link; refusals name the standing review
-  state or the missing summary binding; every measurement
-  is re-performed by a second path before its verified
-  mark. A measurement is an oversight artefact about a
-  case, not part of it: striking one over a sealed case
-  leaves the export package hash unmoved. The parity
-  walk measures on both stores (the figure sheet now
-  63,543 canonical bytes, identical hashes), six
-  `draft_final_*` counters join the eval gate, and
-  `make draft-final-check` grades the planted book.
-  Round 17 shipped: the second red team — a deliberate
+- **Round 19 of 20.** Built and gate-green: everything in
+  Rounds 1–18, plus the third red team — the pre-release
+  attack pass over what Rounds 12–18 built, above all
+  Round 18's measurement. Ten attacks: one real defect
+  fixed in the round (RT-42 — a measurement's identity
+  was taken on trust: the verifier graded figures only,
+  and standing was a date order over stored rows, so a
+  forged row with a flipped verbatim flag displaced the
+  genuine standing measurement and poisoned the book's
+  roll-up; the verifier now grades pack, content address
+  and chain shape alongside the figures, and standing
+  requires the single chain `measure()` builds over
+  eligible artefacts), eight held, and one boundary
+  stated rather than fixed (RT-50 — a wholesale payload
+  replacement that recomputes its own content address is
+  identity-valid, and only the figure re-performance
+  names it; recorded in `docs/red-team.md`). Three
+  `redteam3_*` counters join the eval gate (117 in all),
+  `make red-team-check` stands the identity defences as
+  a check, and no findings stand open. Round 18 shipped:
+  draft-vs-final review measurement — the design brief's
+  eighth law, the last of its ten without machinery. Per
+  case, once the dual-control review completes, an
+  insert-only measurement (`DFM-`, migration 0014)
+  records the distance between the first assembled
+  narrative draft and the summary content the completing
+  accept acts bound: a statement-level diff computed
+  under a versioned pack (2026.10.1) — unchanged,
+  citation-changed, added, dropped, carried as counts
+  and statement hashes, never statement text — the
+  assemblies walked and the distinct drafts among them,
+  and whether the gate approved the draft untouched. The
+  book's verbatim rate folds at read time with its
+  denominator on the figure; measurements over moved
+  records supersede by link; refusals name the standing
+  review state or the missing summary binding; every
+  measurement is re-performed by a second path before
+  its verified mark. A measurement is an oversight
+  artefact about a case, not part of it: striking one
+  over a sealed case leaves the export package hash
+  unmoved. The parity walk measures on both stores (the
+  figure sheet 63,543 canonical bytes, identical
+  hashes), six `draft_final_*` counters join the eval
+  gate, and `make draft-final-check` grades the planted
+  book. Round 17 shipped: the second red team — a deliberate
   attack pass over the surfaces Rounds 11–16 built, in
   Round 9's pattern (traps in `tests/test_redteam2.py`,
   the `redteam2_*` eval counters, the record appended to

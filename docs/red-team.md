@@ -238,3 +238,70 @@ history invariant, held text in the console, and console
 write-freedom — each computed over a fresh service graph
 planted for the round, alongside the traps in
 `tests/test_redteam2.py`.
+
+## Round 19 amendments — the third red team
+
+This section is appended, not edited into the record
+above: the Round 9 verdicts, the Round 10 closures and
+the Round 17 amendments stand as written. Round 19 is
+the pre-release pass, over what was built since the
+second team went home — above all Round 18's
+draft-vs-final measurement, the one surface no red team
+had attacked — with fresh angles on the Round 12–16
+surfaces where Round 18 changed what they compose.
+Attacks are kept as regression tests in
+`tests/test_redteam3.py`, as the zero-tolerance
+`redteam3_*` counters in the eval gate, and as the
+standing `scripts/check_red_team.py`. One attack was a
+real defect, fixed in this round; one boundary is
+stated, not fixed (RT-50).
+
+### (n) The draft-vs-final measurement (Round 18)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-42 | Identity forgery against the measurement layer: a row written around the service into the measurement table — a flipped `approved_verbatim`, a later `measured_on`, no chain link, an id (`DFM-0000000000000000`) that is not the content address of anything — then the standing read and the book roll-up taken. Variants: a stored payload's pack version flipped to a version that does not exist, its id rewritten, a genuine second link's `supersedes` severed, a second eligible link forked over the same predecessor, and the chain closed into a cycle. | **defect** — fixed. The verifier re-performed figures and nothing else: the pack a measurement named, the id it carried and the link it asserted were taken on trust, and standing was a date order over whatever rows the store held — so the forged row displaced the genuine standing measurement and the roll-up counted its flipped flag. Three root fixes, all in `draft_final.py`: the verifier now grades the identity claims alongside the figures (the pack must be one the system holds and the one the re-performance runs under; the id must be the content address recomputed over the artefact's own stated fields; the link must name a held measurement of the same case, never the artefact itself, on a chain that reaches a root); the case's eligible artefacts must form the single chain `measure()` builds, so a severed link (two roots) or a fork (one predecessor, two successors) is named as a broken chain; and standing is decided over chain-eligible artefacts only and requires that single chain — a severed or forked set has *no* standing measurement, rather than a head picked by date from rows whose order the chain does not state. The forgery, every variant, and the untouched genuine measurements are graded in the traps, the `redteam3_measurement_identity` counter and `make red-team-check`. |
+| RT-43 | Measure a case whose review completed and whose record then moved — quarantine release and re-assembly, no fresh review. | held — refused by name: the completing acts are stale against the moved record, the review no longer stands as completed, and there is no approved summary to measure against. |
+| RT-44 | Identical re-assembly after a completed review — the same narrative struck again under a new summary id. | held — a summary's version is its content hash, so the re-assembly stales nothing; the measurement reads verbatim, verifies clean on both paths, and counts assemblies by the pack's stated rule (up to and including the bound final — the later identical assembly postdates the review and is not one of them). |
+| RT-45 | A third current accept — a second medical reviewer accepting the same record — driven through the measurement: do the builder's derived view and the verifier's raw walk name the same completing set? | held — both paths count all three acts, the fingerprint agrees, and the measurement verifies clean. The two selection paths were written to differ in derivation, not in answer; this is the case most likely to split them, and it does not. |
+| RT-46 | The diff's statement identity, gamed: citations swapped between two same-text statements; a statement carried three times in the draft and once in the final; one statement's citations reordered. | held — a statement is its text and its citations, matched as a multiset: the swap leaves the multiset identical and reads unchanged (nothing in either statement's content moved), the duplicates pair one-for-one and drop two, and the reorder reads citation-changed — and the review layer's version hash agrees, treating reordered citations as a new version too, so no artefact can read verbatim under one identity and changed under the other. |
+| RT-47 | Existence oracles on the new surface's act: an intake principal strikes a measurement over a real case and over a ghost. | held — the surface is judged before existence is (RT-40's rule on the round's own act): identical 403s, the refusal on the denial log; a granted scientist over a ghost is a plain 422 naming the absence. |
+| RT-48 | The measurement reaching sideways: the store's artefact census (cases, summaries, acts, assessments, coding decisions, evidence, denials) compared across a strike, and the neighbouring surfaces read for the new artefact — the console (Round 15) composes no measurement section, and the signal counts (Round 13) read no measurement. | held — the census is byte-identical but for the measurement itself; the seal grading of Round 18 (a strike over a sealed case moves no package hash) stands, and no R12–R16 surface folds the new artefact into a figure of its own, so there is no second place for a measurement to be wrong in. |
+| RT-49 | The old measurement over a moved record, re-performed after the case is re-reviewed and re-measured: it must be named, not crash and not pass. | held — the re-performance names the moved figures (and, where the record no longer supports the old selection, says so in those words). A measurement is evidence about the record as it stood at its strike; supersession, not silent continued belief, is the designed answer. |
+| RT-50 | A stored measurement's payload replaced wholesale: fabricated figures (verbatim flipped, counts rewritten) under a correctly recomputed content address, same chain position. | **bounded limit** — stated, not fixed. The replacement is identity-valid by construction: its id *is* its address, its pack is real, its link is the genuine one — identity grading has nothing to grade. What names it is the figure re-performance (`approved_verbatim` and the rewritten counts are each named against the record), which is the defence the system claims: the verifier, the verify endpoint and the standing checks re-perform, and a measurement is believed where it is re-performed. This is the same trust line every artefact in the system stands on — the store's insert-only discipline is a service property, not a storage guarantee — and it is recorded here so the boundary is a decision on the page: below the service layer, figures are graded by re-performance, never by the row's own claims about itself. |
+
+### (o) The parity harness over the new surface (Round 16, revisited)
+
+| id | attack | verdict |
+|----|--------|---------|
+| RT-51 | The Round 16 walk grading its Round 18 extension shallowly — the RT-41 question asked of the new section: does the sheet carry the measurements' figures, or only their ids? | held — the sheet carries both cases' full measurement figures (statement counts, the diff split, the changes by hash, the verified mark and its problems) and the book roll-up, so a dialect divergence in any figure diverges the sheet and is named at its path by `compare_sheets`. |
+
+## Open findings after Round 19
+
+None standing as defects. The round's one defect
+(RT-42) was fixed in the round. One boundary is stated
+as a limit with its reasoning (RT-50): a wholesale
+payload replacement that recomputes its own content
+address is identity-valid, and only the figure
+re-performance names it — the trust line the whole
+system already stands on, recorded so it is a decision,
+not an assumption. A second boundary the pass re-confirmed and did not
+reopen: the measurement diffs the assembler's *stored*
+summaries only — a narrative edited outside the
+assembler leaves no artefact and so no trace in any
+measurement, the same limit the review layer has
+always carried, since it too decides the stored
+record.
+
+## Eval depth added with this round
+
+Three zero-tolerance counters (`redteam3_*`): the
+measurement-identity family (displacement, pack and id
+forgery, the severed link, the fork), the review
+layer's currency through the measurement (the moved
+record refused, identical re-assembly and the third act
+agreed by both paths, the stale measurement named), and
+the diff's multiset games — each computed over fresh
+service graphs planted for the round, alongside the
+traps in `tests/test_redteam3.py` and the standing
+`scripts/check_red_team.py` (`make red-team-check`).

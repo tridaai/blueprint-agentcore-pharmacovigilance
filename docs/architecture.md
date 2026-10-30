@@ -410,6 +410,27 @@ other blueprints already cover the LangGraph pattern.
     including the boundary that a measurement struck over
     a sealed record moves nothing the seal covers.
 
+18. **A measurement's identity is graded, not assumed
+    (Round 19)** — the third red team's one defect
+    (RT-42) was that the verifier re-performed a
+    measurement's figures while taking its pack, its id
+    and its supersedes link on trust, and standing was a
+    date order over whatever rows the store held: the
+    oversight artefact could be displaced by a row that
+    was never struck. The invariant now: an artefact is
+    believed as a chain link only when its id is the
+    content address over its own stated fields, its pack
+    is one the system holds, and its link names a held
+    measurement of the same case; a case's measurements
+    form exactly one such chain or the case has no
+    standing measurement; and the verifier grades those
+    identity claims with the same naming discipline as
+    the figures. What identity cannot grade — a
+    replacement payload that recomputes its own address —
+    is named by the figure re-performance, and that
+    boundary is stated in the red-team record (RT-50)
+    rather than smoothed over.
+
 ## Round map
 
 The full 20-round map lives in the design brief
@@ -423,7 +444,7 @@ pack (R8), the first red team (R9), injection quarantine
 governed model gateway and its cost ledger (R12), signal
 counts (R13), dictionary stewardship (R14), the
 safety-reviewer console (R15), the Postgres profile and the
-parity harness (R16), the second red team (R17) and
-draft-vs-final review measurement (R18). Two rounds remain
-on the map: one further depth round (R19) and release
+parity harness (R16), the second red team (R17),
+draft-vs-final review measurement (R18) and the third
+red team (R19). One round remains on the map: release
 hardening (R20).
