@@ -166,16 +166,33 @@ class ModelPhiRefusal(RuntimeError):
         self.problems = problems
 
 
+def _fold_key(key: str) -> str:
+    """Fold a field path or key for comparison: case and the
+    separator spellings are not identity — `Date_Of_Birth`,
+    `date-of-birth` and `dateOfBirth` are the one key, and a
+    door that matched only the pack's exact lowercase
+    snake_case spelling would wave each of them through
+    (Round 17, RT-28)."""
+    if not isinstance(key, str):
+        return ""
+    return "".join(ch for ch in key.lower() if ch not in "_-. ")
+
+
 def phi_problems(facts: list[dict], pack: dict = MODEL_PACK) -> list[str]:
     """The minimisation scan over one proposed payload: the
     field paths and key names that carry direct identifiers —
-    never the values. An empty list is the only pass."""
-    fields = set(pack["direct_identifier_fields"])
-    keys = set(pack["direct_identifier_keys"])
+    never the values. An empty list is the only pass. Paths
+    and keys are compared folded (`_fold_key`), so a variant
+    spelling of an identifier path or key is the identifier;
+    the problems name the spelling as carried."""
+    fields = {_fold_key(f) for f in pack["direct_identifier_fields"]}
+    keys = {_fold_key(k) for k in pack["direct_identifier_keys"]}
     problems: list[str] = []
     for fact in facts:
         field = fact.get("field", "")
-        if field in fields or field.rsplit(".", 1)[-1] in keys:
+        if _fold_key(field) in fields or _fold_key(
+            field.rsplit(".", 1)[-1]
+        ) in keys:
             problems.append(f"fact field {field!r} is a direct identifier")
         for key in _identifier_keys(fact.get("value"), keys):
             problems.append(f"fact {field!r} carries identifier key {key!r}")
@@ -186,7 +203,7 @@ def _identifier_keys(value, keys: set) -> list[str]:
     found: list[str] = []
     if isinstance(value, dict):
         for key, sub in value.items():
-            if key in keys:
+            if _fold_key(key) in keys:
                 found.append(key)
             found.extend(_identifier_keys(sub, keys))
     elif isinstance(value, list):
