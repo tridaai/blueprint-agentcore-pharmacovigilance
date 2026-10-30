@@ -759,6 +759,50 @@ programme.
   every already-struck report's re-performance. The ledger
   keeps its own guarded surface and its own check instead.
 
+## What Round 13 adds
+
+- **Signal counts** (`src/pv_cases/signals.py`, migration
+  0012): until this round the system could report on its
+  process but never on its data — which product–event pairs
+  the coded book reports disproportionately was a question
+  no surface could answer. A signal table answers it for a
+  window, in code, over the standing coded decisions.
+- **Every pair states its full 2x2** — reports with the
+  product and the term (a), with the product and not the
+  term (b), with the term and not the product (c), with
+  neither (d) — plus the two measures the pack's criteria
+  use: the proportional reporting ratio and the chi-square
+  of the 2x2. A flagged pair is recomputable by hand from
+  its own row. Counting is by distinct case, and cases
+  closed as duplicates or duplicate-linked are out of the
+  population — the primary case carries the report.
+- **Undefined measures are stated, never faked**: a term
+  reported with one product only has *no comparator* — its
+  ratio is undefined whatever its chi-square (the demo's
+  book shows a chi-square of 12.1212 failing to flag on
+  exactly this rule) — and a 2x2 with an empty margin
+  states an *undefined* chi-square. A pair flags only when
+  it meets the pack's stated criteria (a ≥ 3, PRR ≥ 2,
+  chi-square ≥ 4).
+- **The population is honest on the table's face**: how
+  many cases the window held, how many were attributable
+  to a coded product, how many stood unattributed (an
+  uncoded product decision is counted, never guessed into
+  a product), and how many standing event decisions were
+  uncoded. Per-product system-organ-class rows carry their
+  share as a rate with its denominator on the figure.
+- **A flag is a prompt, not a finding** — the table says
+  so on its face: disproportionality in spontaneous
+  reports is not incidence and not evidence of causation.
+  Tables are insert-only artefacts that supersede by link
+  when the record moves, are re-performed by a second
+  aggregation path before their verified mark is set
+  (`scripts/check_signals.py`, or `make signals-check`),
+  carry no case ids and no patient or reporter field
+  anywhere, and are generated as the safety scientist's
+  named act under the access pack (`signal_counts`
+  surface) — the auditor reads tables and generates none.
+
 ## Quick start
 
 ```bash
@@ -776,8 +820,22 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 12 of 20.** Built and gate-green: everything in
-  Rounds 1–11, plus the governed model gateway — every
+- **Round 13 of 20.** Built and gate-green: everything in
+  Rounds 1–12, plus signal counts — the disproportionality
+  view over the coded book (migration 0012): every
+  product–event pair's 2x2 computed in code under a
+  versioned signal pack (2026.10.1) with the proportional
+  reporting ratio and chi-square stated per pair, undefined
+  measures stated as `no_comparator` / `undefined` rather
+  than faked, flags only against the pack's stated criteria
+  (a ≥ 3, PRR ≥ 2, chi-square ≥ 4), counting by distinct
+  case over a duplicate-free population with unattributed
+  and uncoded counts on the table's face; tables as
+  insert-only artefacts superseding by link, re-performed
+  by a second fold before their verified mark, aggregate-
+  only with no case ids anywhere, generated as the safety
+  scientist's named act under the access pack. Round 12
+  shipped: the governed model gateway — every
   summary call routed through one door under a versioned
   model pack (2026.10.1), landing on an insert-only per-case
   cost ledger (migration 0011) whose tokens derive from

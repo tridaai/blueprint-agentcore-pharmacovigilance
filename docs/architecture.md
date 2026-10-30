@@ -261,6 +261,31 @@ other blueprints already cover the LangGraph pattern.
     a new section would fail every already-struck report's
     re-performance — so the ledger keeps its own surface and
     its own check.
+19. (R13) The book is counted against itself, in code. A
+    signal table states every product–event pair's 2x2 over
+    the window's population — cases received in the window,
+    duplicates and duplicate-linked cases excluded, counting
+    by distinct case — with the proportional reporting
+    ratio and chi-square computed from the four cells under
+    the signal pack, and flags only against the pack's
+    stated criteria. Attribution is by the standing coded
+    product decision alone: an uncoded product is counted
+    on the table's face as unattributed and enters no pair,
+    and an uncoded event enters no pair. Where a measure is
+    undefined the table states why — `no_comparator` when a
+    term was reported with one product only (such a pair
+    can never flag, however large its chi-square), and
+    `undefined` for a chi-square on an empty margin. Tables
+    are insert-only (migration 0012), content-addressed,
+    superseding by link, and earn their verified mark only
+    from a second fold over the raw store that regroups
+    every decision by case and walks supersession by hand.
+    Aggregate-only, like the oversight reports: no case id
+    and no patient or reporter field exists in the payload
+    shape, graded by the same key scan. Generation is the
+    safety scientist's judged act under the access pack. A
+    flag is a prompt for human signal evaluation — never a
+    finding — and the table states so on its face.
 
 ## Round map
 
