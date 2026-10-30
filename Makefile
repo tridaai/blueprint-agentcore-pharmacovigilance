@@ -13,7 +13,7 @@
 # No uv? python3 -m venv .venv && source .venv/bin/activate, then:
 #   make install-pip
 
-.PHONY: install install-pip demo test evals serve api invoke reports-check model-ledger-check signals-check steward-check console-check
+.PHONY: install install-pip demo test evals serve api invoke reports-check model-ledger-check signals-check steward-check console-check postgres-check
 
 install:
 	uv sync --extra dev
@@ -49,6 +49,13 @@ steward-check:
 
 console-check:
 	uv run python scripts/check_console.py
+
+# The Postgres production profile, smoked and graded for
+# parity against the SQLite sheet. Needs PV_POSTGRES_URL
+# pointing at a UTF-8 database the check may use
+# exclusively (it works in its own schema).
+postgres-check:
+	uv run python scripts/check_postgres.py
 
 serve:
 	uv run pv-agent-serve
