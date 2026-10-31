@@ -18,20 +18,20 @@ The domain core (models, validity, evidence, store) has no AWS in
 it at all. AWS enters at exactly two edges in R1: the Runtime
 entrypoint (the real SDK) and the model port's `bedrock` profile
 (refusing until configured). Everything else AgentCore is a port
-with a local double, scheduled in the round map — this document
-says, per service, what is real today and what is a double.
+with a local double; this document says, per service, what is
+real at 1.0.0 and what is a double.
 
 ## AgentCore mapping — honest status
 
-| AgentCore service | Production role in this blueprint | R1 status |
+| AgentCore service | Production role in this blueprint | Status at 1.0.0 |
 |---|---|---|
 | **Runtime** | Hosts the agent: ARM64 container, `POST /invocations` + `GET /ping` on 8080; one session = one case-working session | **Real.** `BedrockAgentCoreApp` from `bedrock-agentcore==1.25.1`; contract exercised over ASGI transport in `tests/test_runtime_contract.py`; `app.run(port=8080)` is the container entrypoint |
 | **Memory** | Short-term per session; long-term semantic + episodic strategies for patient/product history feeding case assembly | **Port + local double (Round 8).** `MemoryPort` with the labelled local double; recall is recorded as retrievals of references under a versioned pack with a 365-day retention rule — AgentCore Memory is the production path behind the port |
 | **Gateway** | Safety-database, product-dictionary and literature sources as MCP targets; every production tool call traverses it | **Port wired (Round 8).** The case record, patient history and dictionary tools sit behind the enforcing `GatewayService`; an AgentCore Gateway target is the production transport behind the same invoke contract |
 | **Policy** | Cedar pack (role × tool × PHI caps) in ENFORCE mode on the Gateway; denials arrive as HTTP 200 + JSON-RPC −32002 and must be detected, recorded, surfaced | **Wired (Round 8).** Pack of record at `infra/policies/pv-gateway-policy.cedar` with its executable mirror in code (parity graded by test); denials are constructed as the −32002 envelope in one place, recorded insert-only, and the denied tool never executes |
 | **Identity** | Inbound caller identity; outbound OAuth/API-key vault via `@requires_access_token` / `@requires_api_key` shapes | **Wired locally (Rounds 8 + 10).** Gateway calls carry a named principal + pack role, judged before any tool runs; and the case surfaces carry a principal judged by the versioned access pack — role-scoped reads, existence hiding, act gating, a recorded denial log. AgentCore Identity is the production terminator in front of the same contract; outbound vault shapes land with the AWS account integration |
-| **Evaluations** | Online evaluators (correctness, faithfulness, harm) sampled on live traffic | **Config later (Round 20 infra).** The repo's own deterministic eval gate (`evals/run_evals.py`) is primary and already binding |
-| **Observability** | OpenTelemetry spans per case step; CloudWatch GenAI dashboards | **Partial.** Structured JSON logs with session/case ids (`pv_cases/logging_config.py`); spans land with the infra round |
+| **Evaluations** | Online evaluators (correctness, faithfulness, harm) sampled on live traffic | **Not in 1.0.0.** Online evaluator configuration was deferred to an infra round the release did not take; it remains deployment work. The repo's own deterministic eval gate (`evals/run_evals.py`) is primary and already binding |
+| **Observability** | OpenTelemetry spans per case step; CloudWatch GenAI dashboards | **Partial — logs only.** Structured JSON logs with session/case ids (`pv_cases/logging_config.py`). OpenTelemetry spans were deferred to an infra round the release did not take; they are not in 1.0.0 and remain deployment work |
 
 ## The agent framework choice
 
@@ -438,13 +438,15 @@ The full 20-round map lives in the design brief
 files). As shipped, the rounds ran: foundation (R1),
 de-duplication (R2), coding dictionary (R3), seriousness +
 expectedness (R4), follow-up workflow (R5), medical-reviewer
-gate (R6), sealing/export (R7), the AgentCore Policy (Cedar)
-pack (R8), the first red team (R9), injection quarantine
-(R10), access control with existence hiding (R11), the
+gate (R6), sealing/export (R7), injection quarantine with
+the Memory port and the Gateway + Policy (Cedar) pack (R8),
+the first red team (R9), access control with existence
+hiding (R10), safety oversight reporting (R11), the
 governed model gateway and its cost ledger (R12), signal
 counts (R13), dictionary stewardship (R14), the
 safety-reviewer console (R15), the Postgres profile and the
 parity harness (R16), the second red team (R17),
-draft-vs-final review measurement (R18) and the third
-red team (R19). One round remains on the map: release
-hardening (R20).
+draft-vs-final review measurement (R18), the third
+red team (R19) and release hardening (R20). The map is
+complete at 1.0.0; `docs/release-1.0.0.md` records the
+release and what a deployment still has to do.

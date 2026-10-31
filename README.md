@@ -43,7 +43,10 @@ The promise is precise, and it is enforced in code, not in prompts:
 - **Possible duplicates are flagged, never merged.** Two reports
   sharing the exact mechanical key (patient + product + event +
   onset) are stored as two cases with the suspicion recorded;
-  de-duplication with human review is Round 2.
+  beyond the exact key, the de-duplication rule pack (Round 2)
+  scores candidate pairs and routes them to a named human
+  queue, whose decision links the cases — it never merges
+  them.
 
 This is an independent Trida AI blueprint built around a fictional
 sponsor, Northbridge Therapeutics. It is **not affiliated with or
