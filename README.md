@@ -1120,6 +1120,43 @@ programme.
   red-team-check`) stands the identity defences as a
   check alongside the other standing checks.
 
+## What Round 20 adds
+
+- **Release hardening — the map closes.** No new features:
+  the round is the release itself. Version 1.0.0 is set in
+  the package metadata (`pyproject.toml`), the package
+  `__version__` (which the case API serves as its version)
+  and the lockfile's root entry. `CHANGELOG.md` records the
+  twenty rounds, one entry each, written from these round
+  sections and the git log; `docs/release-1.0.0.md` records
+  what a deployer gets, the freeze figures and the honest
+  limits.
+- **The docs were audited against the code as shipped, and
+  the drift corrected**: the architecture mapping's
+  Evaluations row still promised online evaluator configs
+  "later (Round 20 infra)" and its Observability row spans
+  "with the infra round" — this round took neither; both
+  rows now state plainly that they are **not in 1.0.0** and
+  remain deployment work. The architecture round map
+  carried a shifted numbering for Rounds 10–11 and one
+  round still open; it now records the shipped numbering
+  through R20 and closes. The intro still framed
+  de-duplication as a Round 2 to come, long after the
+  machinery shipped; the layout listing omitted the release
+  artefacts. All corrected in the sweep.
+- **The freeze**: every gate re-run on the finished tree —
+  the full test suite with the Postgres parity leg live,
+  the parity check, the eval gate, the reports,
+  model-ledger, signals, steward, console, draft-final and
+  red-team checks, and the demo end to end. The figures are
+  recorded in `docs/release-1.0.0.md`, from the gate logs,
+  not carried over from earlier rounds.
+- **The work-in-progress notice above stays on.** The
+  automated gates are green; hands-on developer testing and
+  the companion blog post are still outstanding, and the
+  notice comes off when both are done — not before. And
+  still: **nothing is ever submitted to a regulator.**
+
 ## Quick start
 
 ```bash
@@ -1137,7 +1174,18 @@ the default model profile is offline and deterministic.
 
 ## Honest status
 
-- **Round 19 of 20.** Built and gate-green: everything in
+- **Version 1.0.0 — the twenty-round build, complete and
+  frozen.** Round 20 was release hardening only: the
+  version set in the package metadata, `__version__` and
+  the lockfile; `CHANGELOG.md` and `docs/release-1.0.0.md`
+  written; the README and architecture docs audited against
+  the code as shipped and the drift corrected (the
+  architecture mapping's two deferred rows — online
+  evaluator configs, OpenTelemetry spans — are not in
+  1.0.0 and now say so; its round map records the shipped
+  numbering and closes); and every gate re-run on the
+  finished tree, the figures recorded in the release notes.
+  Built and gate-green before the freeze: everything in
   Rounds 1–18, plus the third red team — the pre-release
   attack pass over what Rounds 12–18 built, above all
   Round 18's measurement. Ten attacks: one real defect
