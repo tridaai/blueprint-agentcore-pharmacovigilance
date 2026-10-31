@@ -1408,7 +1408,9 @@ src/pv_cases/     models, validity gate, intake, evidence, store,
 migrations/       numbered SQL migrations (sqlite/ and postgres/)
 evals/            the deterministic eval gate
 tests/            pytest suite incl. the Runtime contract tests
-docs/             architecture.md — the AgentCore mapping, honestly
+docs/             architecture.md — the AgentCore mapping, honestly;
+                  release-1.0.0.md — the 1.0.0 release notes
+CHANGELOG.md      the twenty rounds, one entry each
 Dockerfile        ARM64 Runtime image (port 8080)
 docker-compose.yml  Postgres+pgvector, SeaweedFS S3 (service: minio)
 ```
